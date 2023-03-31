@@ -1,0 +1,9 @@
+printf "TRES_CPU=%d\n", (int)TRES_CPU
+printf "TRES_MEM=%d\n", (int)TRES_MEM
+printf "TRES_ENERGY=%d\n", (int)TRES_ENERGY
+printf "TRES_NODE=%d\n", (int)TRES_NODE
+printf "TRES_BILLING=%d\n", (int)TRES_BILLING
+printf "TRES_FS_DISK=%d\n", (int)TRES_FS_DISK
+printf "TRES_VMEM=%d\n", (int)TRES_VMEM
+printf "TRES_PAGES=%d\n", (int)TRES_PAGES
+printf "TRES_STATIC_CNT=%d\n", (int)TRES_STATIC_CNT
