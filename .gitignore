@@ -1,5 +1,6 @@
-include/tresdef.h
 build/
-slurm.pc
+include/*
+*.pc
 
 *.sw*
+.*
