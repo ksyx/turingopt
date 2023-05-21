@@ -7,9 +7,10 @@ static knownpath_map_t *_knownpath_map;
 #define SETUP_KNOWNPATH_MAP knownpath_map_t &knownpath_map = *_knownpath_map;
 
 #if ENABLE_WATCHPOINT
+#define pid_t long
 constexpr size_t stasize = 8192;
 extern const dr7_t dr7_exec_on_dr0, dr7_nothing;
-static bool dr7_cleared;
+static long dr7_cleared;
 static pid_t ptracerid;
 static std::mutex maplock;
 
@@ -133,11 +134,12 @@ void initfollowupworker(int sig, siginfo_t *info, void *uctx) {
       return;
     }
     printf("%d\n",ptracerid);
+    signal(SIGUSR1, SIG_IGN);
     kill(ptracerid, SIGUSR1);
     while(!dr7_cleared) {
       sched_yield();
     }
-    kill(ptracerid, SIGKILL);
+    // kill(ptracerid, SIGKILL);
     initfollowup();
     // DO NOT FREE THE LOCK
   }
@@ -153,7 +155,7 @@ int ptracer(void *childpid) {
   *child = getpid();
   pid_t pid = getppid();
   printf("PPID = %d %d\n", *child, pid);
-  while(*child);
+  //while(*child);
   errno = 0;
   ptrace(PTRACE_ATTACH, pid, NULL, NULL);
   PERROR("ptrace_attach");
@@ -163,13 +165,15 @@ int ptracer(void *childpid) {
   PERROR("ptrace_setwatchattr");
   ptrace(PTRACE_POKEUSER, pid, DR_OFFSET(6), (void *)0);
   PERROR("ptrace_clearwatchresult");
+  ptrace(PTRACE_POKEDATA, pid, childpid, (void *)1);
+  PERROR("ptrace_notify");
   ptrace(PTRACE_DETACH, pid, NULL, NULL);
   PERROR("ptrace_detach");
   *child = 1;
-  pause();
   while(!dr7_cleared) {
     sched_yield();
   }
+  printf("Exiting\n");fflush(stdout);
   return 0;
 }
 
@@ -181,10 +185,11 @@ void ptracerfollowup(int _) {
   PERROR("ptrace_attach_clear");
   ptrace(PTRACE_POKEUSER, pid, DR_OFFSET(7), dr7_nothing);
   PERROR("ptrace_clearwatchattr");
+  ptrace(PTRACE_POKEDATA, pid, &dr7_cleared, (void *)1);
+  PERROR("ptrace_notify");
   ptrace(PTRACE_DETACH, pid, NULL, NULL);
   PERROR("ptrace_detach_clear");
   dr7_cleared = 1;
-  exit(0);
 }
 #undef PERROR
 #endif
@@ -256,24 +261,29 @@ ATTRCONSTRUCTOR void init(void) {
   static char sta[stasize];
   static pid_t child = 0;
   signal(SIGUSR1, ptracerfollowup);
+  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY /*ptracerid*/);
   clone(ptracer,
         (void *)(sta + stasize - 1),
-        CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM,
+        /*CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_VM*/ NULL,
         &child);
   signal(SIGUSR1, SIG_DFL);
   siga.sa_sigaction = initfollowupworker;
   siga.sa_flags = SA_SIGINFO;
   sigaction(SIGTRAP, &siga, NULL);
+  while(!child){
+    sched_yield();
+  }
+  /*
   while(!child) {
     sched_yield();
   }
   ptracerid = child;
-  prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY /*ptracerid*/);
   child = 0;
   while(!child) {
     sched_yield();
   }
   printf("Child = %d\n", child);
+  */
   #endif
   pthread_t thread;
   pthread_create(&thread, NULL, initworker, NULL);
