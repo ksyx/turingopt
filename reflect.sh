@@ -1,10 +1,12 @@
 #!/bin/bash
 set -eu
+SELF=$(dirname $0)
+LSTDIR=${SELF}/scripts/reflect
 {
 echo '#ifndef _SLURMDB_DEFS_H'
 echo '#define _SLURMDB_DEFS_H'
 echo 'typedef enum {'
-RESULT=$(gdb sacct -x reflect.lst < /dev/null | grep "=")
+RESULT=$(gdb sacct -x "${LSTDIR}/slurm.lst" < /dev/null | grep "=")
 echo $RESULT | tr ' ' ','
 echo '} tres_types_t;'
 echo 'const char *reflect_tres_name(int num) {'
@@ -14,4 +16,4 @@ echo 'default: return "NOTFOUND";'
 echo '}'
 echo '}'
 echo '#endif'
-} > $(dirname $0)/include/tresdef.h
+} > ${SELF}/include/tresdef.h

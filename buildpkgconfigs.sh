@@ -12,15 +12,27 @@ if [[ $# -ne 1 ]]; then
   exit 1
 fi
 module load $1
+selfpath=$(dirname $0)
 link=$(getstring $1 'LIBRARY_PATH' 'L')
 inc=$(getstring $1 'CPATH' 'I')
 version=$(sacct --version)
 name=$(echo "${version}" | cut -f1 -d\ )
 version=$(echo "${version}" | cut -f2 -d\ )
-cat << EOF
+cat > "${selfpath}/slurm.pc" << EOF
 Cflags: ${inc}
 Libs: ${link} -lslurm
 Description: Slurm API
 Name: ${name}
 Version: ${version}
 EOF
+echo "${name} ${version}"
+name='glibc'
+version=$(ldd --version | head -n 1 | rev |  cut -f 1 -d\ | rev)
+cat > "${selfpath}/glibc.pc" << EOF
+Name: ${name}
+Description: ${name}
+Version: ${version}
+EOF
+echo "${name} ${version}"
+echo 'Run the following for pkg-config to locate the packages:'
+echo "export PKG_CONFIG_PATH=${selfpath}"
