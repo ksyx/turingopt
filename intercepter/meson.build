@@ -1,30 +1,39 @@
-src = files([
-  'src/interceptlib.cpp',
-  'src/debugreg.c',
+srcaudit = files([
+  'src/auditlib.cpp',
+  'src/dlmap.cpp',
 ])
 
-proc_map_parser = get_option('proc_map_parser')
+srcpreload = files([
+  'src/preloadlib.cpp',
+  'src/dlmap.cpp',
+])
 
 incdir = [
   'include',
-  '../include',
 #  proc_map_parser + '/include',
 ]
 
-initfunc = 'initlib'
+auditlib = 'turingaudit'
+preloadlib = 'turingpreload'
 
-name = 'turingintercept'
-# Will be overwritten, just interested in the object files
-objs = shared_library('_tmp', src, link_args: ['-ldl'], cpp_args: ['-c'],
-                      include_directories: incdir, build_by_default: false)
-warning(meson.get_compiler('cpp').cmd_array())
-                
-objs = objs.extract_all_objects (recursive: true)
 compiler = meson.get_compiler('cpp').cmd_array()[0]
-custom_target (name, output: 'lib'+name+'.so', input: objs,
-               command: [compiler,
-                         '@INPUT@',
-                         '-ldl', '-lpthread', '-shared',
-#                         proc_map_parser + '/lib/libprocmaps.a',
-                         '-o', '@OUTPUT@'],
-               build_by_default: true)
+foreach name : [auditlib, preloadlib]
+  if name == auditlib
+    src = srcaudit
+  elif name == preloadlib
+    src = srcpreload
+  else
+    error('Unknown target:', name)
+  endif
+  # Will be overwritten, just interested in the object files
+  objs = shared_library(name + '_tmp',
+                        src, cpp_args: ['-c'],
+                        include_directories: incdir, build_by_default: false)
+  objs = objs.extract_all_objects (recursive: true)
+  custom_target (name, output: 'lib'+name+'.so', input: objs,
+                 command: [compiler,
+                           '@INPUT@',
+                           '-ldl', '-lrt', '-shared',
+                           '-o', '@OUTPUT@'],
+                 build_by_default: true)
+endforeach
