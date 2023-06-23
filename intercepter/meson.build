@@ -1,12 +1,15 @@
-srcaudit = files([
-  'src/auditlib.cpp',
+srcshared = [
   'src/dlmap.cpp',
-])
+  'src/mm.cpp'
+]
 
-srcpreload = files([
+srcaudit = [
+  'src/auditlib.cpp',
+] + srcshared
+
+srcpreload = [
   'src/preloadlib.cpp',
-  'src/dlmap.cpp',
-])
+] + srcshared
 
 incdir = [
   'include',
@@ -18,16 +21,18 @@ preloadlib = 'turingpreload'
 
 compiler = meson.get_compiler('cpp').cmd_array()[0]
 foreach name : [auditlib, preloadlib]
+  extra_cpp_args = []
   if name == auditlib
-    src = srcaudit
+    src = files(srcaudit)
+    extra_cpp_args = ['-DAUDITLIB']
   elif name == preloadlib
-    src = srcpreload
+    src = files(srcpreload)
   else
     error('Unknown target:', name)
   endif
   # Will be overwritten, just interested in the object files
   objs = shared_library(name + '_tmp',
-                        src, cpp_args: ['-c'],
+                        src, cpp_args: ['-c'] + extra_cpp_args,
                         include_directories: incdir, build_by_default: false)
   objs = objs.extract_all_objects (recursive: true)
   custom_target (name, output: 'lib'+name+'.so', input: objs,

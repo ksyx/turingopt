@@ -3,9 +3,7 @@
 inline void dlopen_cache_path(const std::string &path) {
   SETUP_DLMAP;
   SETUP_KNOWNPATH_MAP;
-  #if DEBUGOUT
-  fprintf(stderr, "%s\n", path.c_str());
-  #endif
+  DEBUGPATH(fprintf(stderr, "%s\n", path.c_str()));
   if (knownpath_map.count(path)) {
     return;
   }
@@ -89,7 +87,7 @@ void dlmap_add_searchpath(void) {
   std::map<std::string, bool> checked;
   for (unsigned int i = 0; i < dl_search_info->dls_cnt; i++) {
     std::string strpath(dl_search_info->dls_serpath[i].dls_name);
-    puts(strpath.c_str());
+    DEBUGPATH(fputs((strpath + "\n").c_str(), stderr));
     dlopen_cache_path(strpath);
     knownpath_map[strpath] = true;
   }
@@ -105,11 +103,11 @@ void dlmap_cache_fp(FILE *fp, bool isdir) {
     buf[totread - 1] = '\0';
     if (isdir) {
       dlopen_cache_path(std::string(buf));
-      DEBUGOUT(fprintf(stderr, "cache: %s\n", buf));
+      DEBUGPATH(fprintf(stderr, "cache: %s\n", buf));
       knownpath_map[buf] = true;
     } else {
       SETUP_DLMAP;
-      DEBUGOUT(fprintf(stderr, "cache: %s -> %s\n", basename(buf), buf));
+      DEBUGPATH(fprintf(stderr, "cache: %s -> %s\n", basename(buf), buf));
       dlmap.try_emplace(std::string(basename(buf)), std::string(buf));
     }
   }

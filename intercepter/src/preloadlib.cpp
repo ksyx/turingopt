@@ -1,7 +1,11 @@
-#include "dlmap.h"
+#include "preloadlib.h"
 
 dlmap_t *_dlmap;
 knownpath_map_t *_knownpath_map;
+
+int __munmap(void *addr, size_t len) throw() {
+  return munmap(addr, len);
+}
 
 ATTRCONSTRUCTOR void init(void) {
   if (is_buggy_glibc()) {

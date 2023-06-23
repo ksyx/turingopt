@@ -1,10 +1,17 @@
 #ifndef _TURING_INTERCEPTLIB_H
 #define _TURING_INTERCEPTLIB_H
 #define ENABLE_DEBUGOUT 1
+#define ENABLE_PRINTPATH 0
 #if ENABLE_DEBUGOUT
 #define DEBUGOUT(X) X
 #else
 #define DEBUGOUT(X) ;
+#endif
+
+#if ENABLE_PRINTPATH
+#define DEBUGPATH(X) DEBUGOUT(X)
+#else
+#define DEBUGPATH(X) ;
 #endif
 
 #include <unistd.h>
