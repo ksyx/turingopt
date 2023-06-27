@@ -3,6 +3,7 @@
 // USE WITHOUT PRECEDING UNDERSCORE
 dlmap_t *_dlmap;
 knownpath_map_t *_knownpath_map;
+size_t pagesize;
 
 unsigned int la_version(unsigned int version) {
   return LAV_CURRENT;
@@ -125,6 +126,7 @@ uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx,
 ATTRCONSTRUCTOR void init(void) {
   _dlmap = new dlmap_t;
   _knownpath_map = new knownpath_map_t;
+  pagesize = sysconf(_SC_PAGE_SIZE);
   dlmap_add_ld_cache();
   if (auto fp = fopen(".turingopt.cache", "r")) {
     dlmap_cache_fp(fp, false);

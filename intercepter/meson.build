@@ -1,6 +1,7 @@
 srcshared = [
   'src/dlmap.cpp',
-  'src/mm.cpp'
+  'src/mm.cpp',
+  'src/mrecycle.c'
 ]
 
 srcaudit = [
@@ -38,7 +39,8 @@ foreach name : [auditlib, preloadlib]
   custom_target (name, output: 'lib'+name+'.so', input: objs,
                  command: [compiler,
                            '@INPUT@',
-                           '-ldl', '-lrt', '-shared',
+                           '-ldl', '-lrt',  '-latomic',
+                           '-shared', '-flto',
                            '-o', '@OUTPUT@'],
                  build_by_default: true)
 endforeach

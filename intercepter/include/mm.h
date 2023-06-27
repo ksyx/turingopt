@@ -1,6 +1,7 @@
 #ifndef _TURING_MM_H
 #define _TURING_MM_H
 #include "interceptlib.h"
+#include "mrecycle_interface.h"
 #include <sys/mman.h>
 #include <dlfcn.h>
 
@@ -9,6 +10,8 @@
 #else
 #define OVERRIDEN_FUNC(NAME) NAME
 #endif
+
+extern size_t pagesize;
 
 typedef void *(*mmap_t)(void *, size_t, int, int, int, off_t);
 

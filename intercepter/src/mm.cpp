@@ -108,13 +108,13 @@ void implant_chunk(void *chunk_start, size_t user_len, size_t alignment) {
   }
   const bool specific_alignment = alignment > MALLOC_ALIGNMENT;
   const auto advice = get_chunk_implant_advice(chunk_start, user_len);
+  if (!advice.addr) {
+    return;
+  }
   DEBUGOUT(
     fprintf(stderr, "implant_chunk: %p %ld => [%d %p]\n",
       chunk_start, user_len, advice.size_diff, advice.addr);
   );
-  if (!advice.addr) {
-    return;
-  }
   if (!advice.size_diff) {
     user_len = (user_len << 1) | specific_alignment;
   }
@@ -177,9 +177,12 @@ static inline fetch_result fetch_implanted(void *chunk_start) {
 
 void *OVERRIDEN_FUNC(malloc)(size_t len) throw() {
   SETUP(malloc);
-  auto ret = malloc_orig(len);
+  void *ret;
+  if (!(ret = reuse(len, 0))) {
+    ret = malloc_orig(len);
+    implant_chunk(ret, len, 0);
+  }
   DEBUGOUT(fprintf(stderr, "malloc: %ld %p\n", len, ret));
-  implant_chunk(ret, len, 0);
   return ret;
 }
 
@@ -187,7 +190,6 @@ void *OVERRIDEN_FUNC(calloc)(size_t nmemb, size_t len) throw() {
   SETUP(calloc);
   auto ret = calloc_orig(nmemb, len);
   DEBUGOUT(fprintf(stderr, "calloc: %ld %p\n", len * nmemb, ret));
-  implant_chunk(ret, len, 0);
   return ret;
 }
 
@@ -195,15 +197,17 @@ void *OVERRIDEN_FUNC(realloc)(void *addr, size_t len) throw() {
   SETUP(realloc);
   auto ret = realloc_orig(addr, len);
   DEBUGOUT(fprintf(stderr, "realloc: %p %ld %p\n", addr, len, ret));
-  implant_chunk(ret, len, 0);
   return ret;
 }
 
 void *OVERRIDEN_FUNC(memalign)(size_t alignment, size_t len) throw() {
   SETUP(memalign);
-  auto ret = memalign_orig(alignment, len);
+  void *ret;
+  if (!(ret = reuse(len, alignment))) {
+    ret = memalign_orig(alignment, len);
+    implant_chunk(ret, len, alignment);
+  }
   DEBUGOUT(fprintf(stderr, "memalign: %ld %ld %p\n", alignment, len, ret));
-  implant_chunk(ret, len, alignment);
   return ret;
 }
 
@@ -211,34 +215,30 @@ void *OVERRIDEN_FUNC(aligned_alloc)(size_t alignment, size_t len) throw() {
   return OVERRIDEN_FUNC(memalign)(alignment, len);
 }
 
+void *OVERRIDEN_FUNC(valloc)(size_t len) throw() {
+  return OVERRIDEN_FUNC(memalign)(pagesize, len);
+}
+
+void *OVERRIDEN_FUNC(pvalloc)(size_t len) throw() {
+  return
+    OVERRIDEN_FUNC(memalign)(pagesize, len + (pagesize - (len % pagesize)));
+}
+
 int OVERRIDEN_FUNC(posix_memalign)(void **memptr, size_t alignment, size_t len)
   throw() {
   if (!posix_memalign_orig) {
     posix_memalign_orig = (posix_memalign_t)dlsym(RTLD_NEXT, "posix_memalign");
   }
-  auto ret = posix_memalign_orig(memptr, alignment, len);
+  int ret = 0;
+  if (!(*memptr = reuse(len, alignment))) {
+    ret = posix_memalign_orig(memptr, alignment, len);
+    implant_chunk(*memptr, len, alignment);
+  }
   DEBUGOUT(
     fprintf(stderr,
             "posix_memalign: %p %ld %ld %d\n",
             *memptr, alignment, len, ret);
   );
-  implant_chunk(*memptr, len, alignment);
-  return ret;
-}
-
-void *OVERRIDEN_FUNC(valloc)(size_t len) throw() {
-  SETUP(valloc);
-  auto ret = valloc_orig(len);
-  DEBUGOUT(fprintf(stderr, "valloc: %ld %p\n", len, ret));
-  implant_chunk(ret, len, 0);
-  return ret;
-}
-
-void *OVERRIDEN_FUNC(pvalloc)(size_t len) throw() {
-  SETUP(pvalloc);
-  auto ret = pvalloc_orig(len);
-  DEBUGOUT(fprintf(stderr, "pvalloc: %ld %p\n", len, ret));
-  implant_chunk(ret, len, 0);
   return ret;
 }
 
@@ -248,13 +248,16 @@ void OVERRIDEN_FUNC(free)(void *addr) throw() {
   }
   SETUP(free);
   auto fetch_result = fetch_implanted(addr);
-  if (fetch_result.size > 0) {
+  if (fetch_result.size != -1) {
     DEBUGOUT(
       fprintf(stderr,
-              "free: %p %ld %ld\n",
+              "free_chunk: %p %ld %ld\n",
               addr, fetch_result.size, fetch_result.alignment
       )
     );
+    if (recycle(addr, fetch_result.size, fetch_result.alignment)) {
+      return;
+    }
   }
   return free_orig(addr);
 }
