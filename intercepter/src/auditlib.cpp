@@ -1,5 +1,5 @@
 #include "auditlib.h"
-
+#if !DISCARD_AUDITLIB
 // USE WITHOUT PRECEDING UNDERSCORE
 dlmap_t *_dlmap;
 knownpath_map_t *_knownpath_map;
@@ -142,3 +142,4 @@ ATTRCONSTRUCTOR void init(void) {
     dlmap_add_searchpath();
   }
 }
+#endif

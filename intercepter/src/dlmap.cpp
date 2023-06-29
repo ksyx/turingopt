@@ -1,5 +1,5 @@
 #include "dlmap.h"
-
+#if !DISCARD_AUDITLIB
 inline void dlopen_cache_path(const std::string &path) {
   SETUP_DLMAP;
   SETUP_KNOWNPATH_MAP;
@@ -130,3 +130,4 @@ void dlmap_add_ld_cache(void) {
   setenv("LD_PRELOAD", getenv("LD_PRELOAD__COPY__"), 1);
   setenv("LD_AUDIT", getenv("LD_AUDIT__COPY__"), 1);
 }
+#endif

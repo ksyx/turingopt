@@ -9,7 +9,7 @@
 #include <dlfcn.h>
 
 #include <gnu/libc-version.h>
-
+#if !DISCARD_AUDITLIB
 typedef std::map<std::string, bool> knownpath_map_t;
 typedef std::map<std::string, std::string> dlmap_t;
 
@@ -37,4 +37,5 @@ inline std::string get_map_addr_filename() {
   static std::string path = std::to_string(getpid()) + ".turingopt.addr";
   return path;
 }
+#endif
 #endif

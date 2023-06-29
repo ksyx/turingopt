@@ -7,6 +7,7 @@
 #include <link.h>
 #include <assert.h>
 
+#if !DISCARD_AUDITLIB
 LINKAGE unsigned int la_version(unsigned int version);
 LINKAGE char *la_objsearch(const char *name, uintptr_t *cookie,
                            unsigned int flag);
@@ -17,4 +18,5 @@ LINKAGE uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx,
                                unsigned int *flags, const char *symname);
 LINKAGE void la_activity(uintptr_t *cookie, unsigned int flag);
 LINKAGE ATTRCONSTRUCTOR void init(void);
+#endif
 #endif
