@@ -35,4 +35,4 @@ Version: ${version}
 EOF
 echo "${name} ${version}"
 echo 'Run the following for pkg-config to locate the packages:'
-echo "export PKG_CONFIG_PATH=${selfpath}"
+echo "export PKG_CONFIG_PATH=${selfpath}:"'$PKG_CONFIG_PATH'

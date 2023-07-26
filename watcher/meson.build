@@ -4,7 +4,9 @@ src = files([
 
 incdir = [
   'include',
+  'sql',
   '../include'
 ]
 
-executable('turingwatch', src, include_directories: incdir, dependencies: [slurm])
+executable('turingwatch', src, include_directories: incdir,
+           dependencies: [slurm, sqlite])
