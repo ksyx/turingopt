@@ -1,22 +1,20 @@
 #include "main.h"
 
 // Connections
-static sqlite3 *SQL_CONN_NAME;
-static void *slurm_conn;
+sqlite3 *SQL_CONN_NAME;
+void *slurm_conn;
 
 // Watcher Metadata
-static char *hostname;
-static pid_t pid;
-static bool is_privileged;
-static WorkerType worker_type;
-#define is_scraper (worker_type == WORKER_SCRAPER)
-#define is_parent (worker_type == WORKER_PARENT)
-static slurm_step_id_t jobstep_info;
+char *hostname;
+pid_t pid;
+bool is_privileged;
+worker_type_t worker_type;
+slurm_step_id_t jobstep_info;
 
 // Watcher Parameters
-static int watcher_id;
-static time_t time_range_start;
-static time_t time_range_end;
+int watcher_id;
+time_t time_range_start;
+time_t time_range_end;
 
 tres_t::tres_t(const char *tres_str) : tres_t() {
   size_t idx = 0;
@@ -44,7 +42,7 @@ void tres_t::print() {
   }
 }
 
-static void build_sqlite_conn() {
+static inline void build_sqlite_conn() {
   char *db_path = getenv(DB_FILE_ENV);
   if (!db_path) {
     db_path = (char *)DEFAULT_DB_PATH;
@@ -62,54 +60,7 @@ static void build_sqlite_conn() {
   sqlite3_free(sqlite_err);
 
   // Register watcher
-  sqlite3_stmt *insert_watcher = NULL;
-  if (!IS_SQLITE_OK(
-      PREPARE_STMT(REGISTER_WATCHER_SQL_RETURNING_WATCHERID, &insert_watcher, 0)
-    )) {
-    perror("prepare");
-    exit(1);
-  }
-  SQLITE3_BIND_START;
-  NAMED_BIND_INT(insert_watcher, ":pid", pid);
-  NAMED_BIND_TEXT(insert_watcher, ":target_node", hostname);
-  NAMED_BIND_INT(insert_watcher, ":jobid", jobstep_info.job_id);
-  NAMED_BIND_INT(insert_watcher, ":stepid", jobstep_info.step_id);
-  NAMED_BIND_INT(insert_watcher, ":privileged", is_privileged);
-  if (BIND_FAILED) {
-    exit(1);
-  }
-  SQLITE3_BIND_END;
-  int ret;
-  if ((ret = sqlite3_step(insert_watcher)) != SQLITE_ROW) {
-    if (IS_SLURM_SUCCESS(ret)) {
-      fputs("sqlite3_step: no result returned\n", stderr);
-    } else {
-      SQLITE3_PERROR("step");
-    }
-    exit(1);
-  }
-  SQLITE3_FETCH_COLUMNS_START("id", "start");
-  SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, insert_watcher) {
-    if (!IS_EXPECTED_COLUMN(insert_watcher, i)) {
-      fprintf(stderr, "fetch_result_column: expected %s, got %s\n",
-                EXPECTED_COLUMN_NAMES_VAR[i],
-                GET_COLUMN_NAME(insert_watcher, i));
-      exit(1);
-    }
-    switch(i) {
-      case 0: watcher_id = SQLITE3_FETCH(int64, insert_watcher, i); break;
-      case 1: time_range_start = SQLITE3_FETCH(int, insert_watcher, i); break;
-      default:
-        fprintf(stderr, "fetch_result_column: unexpected column index %d\n", i);
-    }
-  }
-  SQLITE3_FETCH_COLUMNS_END;
-  DEBUGOUT(
-    fprintf(stderr,
-            "watcher_id=%d, time_range_start=%ld\n",
-            watcher_id, time_range_start));
-  if (!IS_SQLITE_OK(sqlite3_finalize(insert_watcher))) {
-    SQLITE3_PERROR("finalize");
+  if (!renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID)) {
     exit(1);
   }
 }

@@ -37,23 +37,32 @@ CREATE TABLE IF NOT EXISTS watcher(
     || CASE WHEN stepid IS NOT NULL THEN CAST(stepid AS TEXT) ELSE "n" END)
   STORED,
 
-  /* lastfetch is optional */
-  lastfetch INTEGER NOT NULL DEFAULT(unixepoch('now', '-14 days')),
-  prev_lastfetch INTEGER, /* Statement level CAS */
+  /* Statement level CAS */
+  lastfetch INTEGER NOT NULL DEFAULT(unixepoch('now')),
+  prev_lastfetch INTEGER NOT NULL DEFAULT(unixepoch('now', '-28 days'))
+    CHECK(prev_lastfetch <= lastfetch),
 
+  /* UPDATE NULL INDEX WHEN CHANGED */
   UNIQUE (jobstep_str, target_node, accuracy)
 );
 
 CREATE INDEX IF NOT EXISTS watcher_index ON watcher(jobid) WHERE jobid > 0;
 
-CREATE TRIGGER IF NOT EXISTS watcher_update BEFORE UPDATE ON watcher BEGIN
-  SELECT RAISE(ABORT, 'Update of watcher record not supported');
-END;
+/* MUST BE UNIQUE COMPOSITION \ NONDUPLICATING NULLABLE COLUMNS */
+CREATE UNIQUE INDEX IF NOT EXISTS watcher_unique_null
+  ON watcher (jobstep_str, accuracy) WHERE target_node IS NULL;
 
 CREATE TABLE IF NOT EXISTS jobinfo(
-  jobid INTEGER PRIMARY KEY NOT NULL CHECK(jobid > 0),
-  user TEXT NOT NULL
+  jobid INTEGER NOT NULL CHECK(jobid > 0),
+  stepid INTEGER,
+  user TEXT,
+  job_name TEXT,
+  submit_line TEXT,
+  PRIMARY KEY (jobid, stepid)
 ) WITHOUT ROWID;
+
+CREATE UNIQUE INDEX IF NOT EXISTS jobinfo_unique_null
+  ON jobinfo (jobid) WHERE stepid IS NULL;
 
 CREATE TABLE IF NOT EXISTS measurements(
   recordid INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -3,7 +3,7 @@
 #include "common.h"
 #include "tresdef.h"
 
-#include "sqlite_helper.h"
+#include "db_common.h"
 #include "ddl.sql"
 #include "modify.sql"
 
@@ -13,12 +13,6 @@
 #define DB_FILE_ENV WATCHER_ENV("DB_FILE")
 #define PRINT_ONLY_ENV WATCHER_ENV("PRINT_ONLY")
 #define DEFAULT_DB_PATH "./turingwatch.db"
-
-enum WorkerType {
-  WORKER_SCRAPER,
-  WORKER_WATCHER,
-  WORKER_PARENT,
-};
 
 struct tres_t {
   size_t value[TRES_SIZE];

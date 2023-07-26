@@ -1,5 +1,6 @@
 src = files([
-  'src/main.cpp'
+  'src/main.cpp',
+  'src/db_common.cpp'
 ])
 
 incdir = [
