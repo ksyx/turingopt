@@ -66,7 +66,7 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
         if (strncmp(start, "mem", len) == 0) {
           BIND(int64, ":mem", val);
         } else if (strncmp(start, "gres/gpu", len) == 0) {
-          BIND(int, "ngpu", val);
+          BIND(int, ":ngpu", val);
         }
       }
       if (!c) {

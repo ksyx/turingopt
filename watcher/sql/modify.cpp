@@ -33,11 +33,11 @@ const char *MEASUREMENTS_INSERT_SQL = SQLITE_CODEBLOCK(
 );
 
 const char *JOBINFO_INSERT_SQL = SQLITE_CODEBLOCK(
-  INSERT OR IGNORE INTO jobinfo(
+  INSERT INTO jobinfo(
     jobid, stepid, user, name, submit_line,
     mem, node, ngpu
   ) VALUES (
     :jobid, :stepid, :user, :name, :submit_line,
     :mem, :node, :ngpu
-  )
+  ) ON CONFLICT DO NOTHING
 );

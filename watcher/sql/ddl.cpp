@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS jobinfo(
   node INTEGER,
   ngpu INTEGER,
   PRIMARY KEY (jobid, stepid)
-) WITHOUT ROWID;
+);
 
 CREATE UNIQUE INDEX IF NOT EXISTS jobinfo_unique_null
   ON jobinfo (jobid) WHERE stepid IS NULL;
