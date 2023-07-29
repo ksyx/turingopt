@@ -16,7 +16,12 @@ int watcher_id;
 time_t time_range_start;
 time_t time_range_end;
 
+slurm_job_state_string_func_t slurm_job_state_string;
+
 tres_t::tres_t(const char *tres_str) : tres_t() {
+  if (!tres_str) {
+    return;
+  }
   size_t idx = 0;
   size_t *cur = &idx;
   while (*tres_str) {
@@ -66,6 +71,8 @@ static inline void build_sqlite_conn() {
 }
 
 static void finalize(void) {
+  worker_finalize();
+  db_common_finalize();
   if (slurm_conn && !IS_SLURM_SUCCESS(slurmdb_connection_close(&slurm_conn))) {
     slurm_perror("slurmdb_connection_close");
   }
@@ -88,6 +95,13 @@ static inline void to_integer(const char *ptr, T *val) {
 }
 
 static inline bool initialize(int argc, char *argv[]) {
+  slurm_job_state_string
+    = (slurm_job_state_string_func_t)
+        dlsym(RTLD_DEFAULT, "slurm_job_state_string");
+  if (!slurm_job_state_string) {
+    printf("dlsym: %s", dlerror());
+    exit(1);
+  }
   if (argc > 1) {
     worker_type = WORKER_PARENT;
   } else if (getenv(IS_SCRAPER_ENV)) {
@@ -114,7 +128,11 @@ static inline bool initialize(int argc, char *argv[]) {
       slurm_free_ctl_conf(conf);
       return uid == conf->slurm_user_id;
     };
-    if (uid == 0 || is_slurm_user()) {
+    if (uid == 0
+    #if SLURM_USER_IS_PRIVILEGED
+    || is_slurm_user()
+    #endif
+    ) {
       // scraper could continue with fetching gpu data only
       is_privileged = true;
     }
@@ -164,6 +182,7 @@ int main(int argc, char *argv[]) {
     if (is_scraper) {
       // scrap data
     } else {
+      watcher();
     }
   } else {
     // spawn subprocess with args starting argv[1] and record progressive data

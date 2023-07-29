@@ -1,5 +1,3 @@
-#ifndef _TURINGWATCHER_SQL_DDL_SQL
-#define _TURINGWATCHER_SQL_DDL_SQL
 #include "sql_helper.h"
 
 const char *INIT_DB_SQL = SQLITE_CODEBLOCK(
@@ -55,9 +53,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS watcher_unique_null
 CREATE TABLE IF NOT EXISTS jobinfo(
   jobid INTEGER NOT NULL CHECK(jobid > 0),
   stepid INTEGER,
-  user TEXT,
-  job_name TEXT,
+  user TEXT CHECK((user IS NULL) IS NOT (stepid IS NULL)),
+  /* stepid IS NULL: jobname, otherwise stepname*/
+  name TEXT,
   submit_line TEXT,
+
+  /* requested resources */
+  mem INTEGER,
+  node INTEGER,
+  ngpu INTEGER,
   PRIMARY KEY (jobid, stepid)
 ) WITHOUT ROWID;
 
@@ -66,8 +70,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS jobinfo_unique_null
 
 CREATE TABLE IF NOT EXISTS measurements(
   recordid INTEGER PRIMARY KEY AUTOINCREMENT,
-  watcherid INTEGER REFERENCES watcher(id),
-  jobid INTEGER REFERENCES jobinfo(jobid),
+  watcherid INTEGER NOT NULL REFERENCES watcher(id) ON DELETE RESTRICT,
+  jobid INTEGER NOT NULL REFERENCES jobinfo(jobid) ON DELETE RESTRICT,
   stepid INTEGER,
   /* timestamp INTEGER DEFAULT(unixepoch('now')) NOT NULL, */
   /* should ORDER BY tot_time */
@@ -122,4 +126,3 @@ BEGIN
   SELECT RAISE(ABORT, 'Update of measurement record not supported');
 END;
 );
-#endif

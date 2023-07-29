@@ -1,6 +1,12 @@
 src = files([
   'src/main.cpp',
-  'src/db_common.cpp'
+  'src/db_common.cpp',
+  'src/worker.cpp',
+  '../include/tresdef.cpp',
+
+  # SQL Definitions
+  'sql/ddl.cpp',
+  'sql/modify.cpp'
 ])
 
 incdir = [
@@ -10,4 +16,5 @@ incdir = [
 ]
 
 executable('turingwatch', src, include_directories: incdir,
-           dependencies: [slurm, sqlite])
+           dependencies: [slurm, sqlite],
+           link_args: ['-flto', '-lpthread', '-ldl'])
