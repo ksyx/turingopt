@@ -186,7 +186,7 @@ measurement_record_insert(
     BIND(int, ":gpu_util", (int)(*gpu_util * GPU_UTIL_MULTIPLIER));
   }
   #define BINDTIMING(VAR) \
-    BIND(int, ":" #VAR "_sec", step->VAR##_cpu_sec); \
+    BIND(int64, ":" #VAR "_sec", step->VAR##_cpu_sec); \
     BIND(int, ":" #VAR "_usec", step->VAR##_cpu_usec);
   BINDTIMING(sys); BINDTIMING(user);
   #undef BINDTIMING
@@ -239,7 +239,7 @@ void watcher() {
       sqlite3_begin_transaction();
       jobinfo_record_insert(job);
       #if !SLURM_TRACK_STEPS_REMOVED
-      if (!job->track_steps) {
+      if (!job->track_steps && !job->steps) {
         auto job_step =
           (slurmdb_step_rec_t *) calloc(1, sizeof(slurmdb_step_rec_t));
         #define COPY(FIELD) job_step->FIELD = job->FIELD;
@@ -259,6 +259,11 @@ void watcher() {
         ListIterator step_it = slurm_list_iterator_create(job->steps);
         while (
           const auto step = (slurmdb_step_rec_t *) slurm_list_next(step_it)) {
+          #if !SLURM_TRACK_STEPS_REMOVED
+          if (!job->track_steps) {
+            step->stats = job->stats;
+          }
+          #endif
           measurement_record_insert(step);
         }
         slurm_list_iterator_destroy(step_it);
