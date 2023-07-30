@@ -6,7 +6,5 @@ project('turingopt', ['c', 'cpp'], default_options: [
 slurm = dependency('slurm')
 sqlite = dependency('sqlite3')
 
-run_command('reflect.sh', check: true)
-
 subdir('watcher')
 subdir('intercepter')

@@ -18,6 +18,39 @@ time_t time_range_end;
 
 slurm_job_state_string_func_t slurm_job_state_string;
 
+std::map<std::string, int> tres_t::tres_from_str;
+std::map<int, std::string> tres_t::tres_from_id;
+bool tres_t::tres_map_initialized;
+
+tres_t::tres_t() {
+  if (!tres_map_initialized) {
+    tres_map_initialized = 1;
+    slurmdb_tres_cond_t condition;
+    slurmdb_init_tres_cond(&condition, false);
+    List tres_list = slurmdb_tres_get(slurm_conn, &condition);
+    ListIterator tres_it = slurm_list_iterator_create(tres_list);
+    DEBUGOUT(
+    bool first = 1;
+    )
+    while (const auto tres = (slurmdb_tres_rec_t *) slurm_list_next(tres_it)) {
+      DEBUGOUT(
+        fprintf(stderr,
+          "%s%s/%s=%d", first ? "" : ",", tres->type, tres->name, tres->id);
+        first = 0;
+      );
+      std::string tres_type_str(tres->type);
+      if (tres->name) {
+        tres_type_str += "/" + std::string(tres->name);
+      }
+      tres_from_str.try_emplace(tres_type_str, tres->id);
+      tres_from_id.try_emplace(tres->id, tres_type_str);
+    }
+    DEBUGOUT(fputs("\n", stderr););
+    slurm_list_iterator_destroy(tres_it);
+    slurm_list_destroy(tres_list);
+  }
+}
+
 tres_t::tres_t(const char *tres_str) : tres_t() {
   if (!tres_str) {
     return;
@@ -31,20 +64,20 @@ tres_t::tres_t(const char *tres_str) : tres_t() {
       cur = &idx;
       idx = 0;
     } else if (*tres_str == '=') {
-      value[TRES_IDX(idx)] = 0;
-      cur = &value[TRES_IDX(idx)];
+      value[idx] = 0;
+      cur = &value[idx];
     }
     tres_str++;
   }
 }
 
 void tres_t::print() {
-  for (int i = 0; i < TRES_SIZE; i++) {
-    printf("%s=%ld%c",
-      reflect_tres_name(TRES_ENUM(i)),
-      value[i],
-      i == TRES_SIZE - 1 ? '\n' : ',');
+  bool first = 1;
+  for (auto &[idx, val] : value) {
+    printf("%s%s=%ld", first ? "" : ",", from_id(idx), val);
+    first = 0;
   }
+  puts("");
 }
 
 static inline void build_sqlite_conn() {

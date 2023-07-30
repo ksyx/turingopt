@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <map>
 
 #include <stdexcept>
 
@@ -22,11 +23,10 @@
 #include <sqlite3.h>
 #include "sqlite_helper.h"
 
-#include "tresdef.h"
 #include "sql.h"
 
 #define SLURM_USER_IS_PRIVILEGED 0
-#define ENABLE_DEBUGOUT 1
+#define ENABLE_DEBUGOUT 0
 #if ENABLE_DEBUGOUT
 #define DEBUGOUT(X) X
 #else
@@ -40,22 +40,31 @@ extern slurm_job_state_string_func_t slurm_job_state_string;
 #define IS_SQLITE_OK(EXPR) EXPECT_EQUAL(EXPR, SQLITE_OK)
 #define IS_SLURM_SUCCESS(EXPR) EXPECT_EQUAL(EXPR, SLURM_SUCCESS)
 
-struct tres_t {
-  size_t value[TRES_SIZE];
+class tres_t {
+public:
+  std::map<size_t, size_t> value;
   // comma delimitered string of form index=value
   tres_t(const char *tres_str);
-  tres_t() {
-    memset(value, 0, sizeof(value));
-  }
+  tres_t();
   tres_t &operator +=(const tres_t &rhs) {
-    for (int i = 0; i < TRES_SIZE; i++)
-      value[i] += rhs.value[i];
+    for (auto &[idx, val] : rhs.value)
+      value[idx] += val;
     return *this;
   }
   size_t &operator[](std::size_t idx) {
-    return value[TRES_IDX(idx)];
+    return value[idx];
+  }
+  static int from_str(const char *str) {
+    return tres_from_str[std::string(str)];
+  }
+  static const char *from_id(int idx) {
+    return tres_from_id[idx].c_str();
   }
   void print();
+private:
+  static std::map<std::string, int> tres_from_str;
+  static std::map<int, std::string> tres_from_id;
+  static bool tres_map_initialized;
 };
 
 enum worker_type_t {

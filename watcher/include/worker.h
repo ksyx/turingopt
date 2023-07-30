@@ -4,6 +4,11 @@
 #include "sqlite_helper.h"
 #include "db_common.h"
 
+#define TRES_ID(X) tres_t::from_str(X)
+#define DISK_TRES TRES_ID("fs/disk")
+#define GPU_TRES TRES_ID("gres/gpu")
+#define MEM_TRES TRES_ID("mem")
+
 #define FREQ(HOUR, MINUTE, SECOND) HOUR * 60 * 60 + MINUTE * 60 + SECOND
 // The data is always there so just ensure new findings are alerted at a
 // reasonable frequency

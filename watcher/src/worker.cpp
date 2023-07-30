@@ -51,55 +51,9 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
   #define BIND(TY, VAR, VAL) SQLITE3_NAMED_BIND(TY, jobinfo_insert, VAR, VAL);
   #define BIND_TEXT(VAR, VAL) NAMED_BIND_TEXT(jobinfo_insert, VAR, VAL);
   BIND(int, ":jobid", job->jobid);
-  const char *cur = job->tres_req_str;
-  const char *start = cur;
-  const char *end = start;
-  size_t val = 0;
-  bool growing = 1, invalid = 0;
-  while (cur) {
-    const char c = *cur;
-    if (c == '=') {
-      growing = 0;
-    } else if (c == ',' || !c) {
-      if (!invalid) {
-        size_t len = end - start + 1;
-        if (strncmp(start, "mem", len) == 0) {
-          BIND(int64, ":mem", val);
-        } else if (strncmp(start, "gres/gpu", len) == 0) {
-          BIND(int, ":ngpu", val);
-        }
-      }
-      if (!c) {
-        break;
-      }
-      val = 0;
-      growing = 1;
-      start = cur + 1;
-      end = cur;
-      invalid = 0;
-    } else if (!growing && (c >= '0' && c <= '9')) {
-      val = val * 10 + c - '0';
-    } else if (growing && (*(cur + 1) == ',' || !*(cur + 1))) {
-      size_t multiplier = 1;
-      #define LEVEL(X) case X: multiplier *= 1024;
-      switch (*cur) {
-        LEVEL('P');
-        LEVEL('T');
-        LEVEL('G');
-        LEVEL('M');
-        LEVEL('K');
-        case 'B': break;
-        default:
-        invalid = 1;
-      }
-      val *= multiplier;
-      #undef LEVEL
-    }
-    if (growing) {
-      end++;
-    }
-    cur++;
-  }
+  tres_t tres_req(job->tres_req_str);
+  BIND(int64, ":mem", tres_req[MEM_TRES]);
+  BIND(int, ":ngpu", tres_req[GPU_TRES]);
   BIND_TEXT(":node", job->nodes);
   if (job->user) {
     BIND_TEXT(":user", job->user);
@@ -176,9 +130,9 @@ measurement_record_insert(
   BIND(int, ":watcherid", watcher_id);
   BIND(int, ":jobid", step->job_ptr->jobid);
   BIND(int, ":stepid", step->step_id.step_id);
-  BIND(int64, ":dev_in", tres_in[TRES_FS_DISK]);
-  BIND(int64, ":dev_out", tres_out[TRES_FS_DISK]);
-  BIND(int64, ":res_size", res_size ? *res_size : tres_max[TRES_MEM]);
+  BIND(int64, ":dev_in", tres_in[DISK_TRES]);
+  BIND(int64, ":dev_out", tres_out[DISK_TRES]);
+  BIND(int64, ":res_size", res_size ? *res_size : tres_max[MEM_TRES]);
   if (minor_pagefault) {
     BIND(int64, ":minor_pagefault", *minor_pagefault);
   }

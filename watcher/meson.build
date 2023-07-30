@@ -2,7 +2,6 @@ src = files([
   'src/main.cpp',
   'src/db_common.cpp',
   'src/worker.cpp',
-  '../include/tresdef.cpp',
 
   # SQL Definitions
   'sql/ddl.cpp',
@@ -12,7 +11,6 @@ src = files([
 incdir = [
   'include',
   'sql',
-  '../include'
 ]
 
 executable('turingwatch', src, include_directories: incdir,
