@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS measurements(
   user_sec INTEGER NOT NULL, user_usec INTEGER NOT NULL,
   sys_sec INTEGER NOT NULL, sys_usec INTEGER NOT NULL,
   tot_time INTEGER
-    GENERATED ALWAYS AS (user_sec + user_usec + sys_sec + sys_usec) STORED
+    GENERATED ALWAYS
+    AS (user_sec * 1e6 + user_usec + sys_sec * 1e6 + sys_usec) STORED
     CHECK (tot_time > 0),
   res_size INTEGER, /* resident set size */
   minor_pagefault INTEGER,
