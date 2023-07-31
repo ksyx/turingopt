@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS jobinfo(
   /* requested resources */
   mem INTEGER,
   node INTEGER,
-  ngpu INTEGER,
+  ngpu INTEGER CHECK((ngpu IS NULL) IS NOT (stepid IS NULL)),
   PRIMARY KEY (jobid, stepid)
 );
 

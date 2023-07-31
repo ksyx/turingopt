@@ -52,7 +52,7 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
   #define BIND_TEXT(VAR, VAL) NAMED_BIND_TEXT(jobinfo_insert, VAR, VAL);
   BIND(int, ":jobid", job->jobid);
   tres_t tres_req(job->tres_req_str);
-  BIND(int64, ":mem", tres_req[MEM_TRES]);
+  BIND(int64, ":mem", tres_req[MEM_TRES] * 1024 * 1024);
   BIND(int, ":ngpu", tres_req[GPU_TRES]);
   BIND_TEXT(":node", job->nodes);
   if (job->user) {
