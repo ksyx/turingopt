@@ -4,21 +4,29 @@
 #include <slurm/slurm.h>
 // True for slurm versions starting commit 5676bdf1a5c or release 22-05-0-0-rc1
 #define SLURM_TRACK_STEPS_REMOVED 0
+#include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <vector>
 #include <map>
+#include <set>
 
 #include <stdexcept>
 
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
 #include <unistd.h>
 #include <dlfcn.h>
 #include <pwd.h>
+#include <errno.h>
 
 #include <sqlite3.h>
 #include "sqlite_helper.h"
@@ -36,6 +44,8 @@
 typedef char *(*slurm_job_state_string_func_t)(uint32_t);
 extern slurm_job_state_string_func_t slurm_job_state_string;
 
+#define _STRINGIFY(X) #X
+#define STRINGIFY(X) _STRINGIFY(X)
 #define EXPECT_EQUAL(EXPR, EXPECT) ((EXPR) == (EXPECT))
 #define IS_SQLITE_OK(EXPR) EXPECT_EQUAL(EXPR, SQLITE_OK)
 #define IS_SLURM_SUCCESS(EXPR) EXPECT_EQUAL(EXPR, SLURM_SUCCESS)

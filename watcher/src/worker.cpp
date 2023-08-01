@@ -114,7 +114,6 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
 static void
 measurement_record_insert(
   slurmdb_step_rec_t *step,
-  const size_t *res_size = NULL,
   const size_t *minor_pagefault = NULL,
   const gpu_util_t *gpu_util = NULL) {
   #define OP "(measurement_insert)"
@@ -132,7 +131,7 @@ measurement_record_insert(
   BIND(int, ":stepid", step->step_id.step_id);
   BIND(int64, ":dev_in", tres_in[DISK_TRES]);
   BIND(int64, ":dev_out", tres_out[DISK_TRES]);
-  BIND(int64, ":res_size", res_size ? *res_size : tres_max[MEM_TRES]);
+  BIND(int64, ":res_size", tres_max[MEM_TRES]);
   if (minor_pagefault) {
     BIND(int64, ":minor_pagefault", *minor_pagefault);
   }
@@ -238,9 +237,253 @@ void watcher() {
   free(condition);
 }
 
+static inline void fetch_proc_stats (
+  process_tree_t &child,
+  scraper_result_map_t &result,
+  stepd_step_id_map_t &stepd_pids) {
+  const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  char buf[READ_BUF_SIZE];
+  scrape_result_t cur_result;
+  memset(&cur_result, 0, sizeof(cur_result));
+  DIR *proc_dir = opendir("/proc");
+  /* Build process tree and get stats */
+  while (auto child_dir = readdir(proc_dir)) {
+    pid_t pid = 0;
+    pid_t ppid = 0;
+    bool success = 0;
+    if (!sscanf(child_dir->d_name, "%d", &pid)) {
+      continue;
+    }
+    std::string basepath = "/proc/" + std::string(child_dir->d_name) + "/";
+    int fd = open((basepath + "stat").c_str(), O_RDONLY);
+    if (fd) {
+      if (auto cnt = read(fd, buf, READ_BUF_SIZE)) {
+        const char *end = buf + cnt;
+        const char *cur = buf;
+        int col = 1;
+        size_t val = 0;
+        for (; !success && cur != end; cur++) {
+          const char c = *cur;
+          // printf("%c[%ld]  ", c, val); fflush(stdout);
+          if (c == ' ') {
+            #define ASSIGNRAW(COL, ASSIGNMENT, ...) \
+              case COL: ASSIGNMENT = val; __VA_ARGS__ break;
+            #define ASSIGN(COL, ASSIGNMENT, ...) \
+              ASSIGNRAW(COL, cur_result.ASSIGNMENT, __VA_ARGS__)
+            #define ASSIGNLAST(COL, ASSIGNMENT) \
+              ASSIGN(COL, ASSIGNMENT, success = 1;)
+            switch (col) {
+              ASSIGN(1, pid);
+              ASSIGNRAW(4, ppid);
+              ASSIGN(10, minor_pagefault);
+              ASSIGN(11, cminor_pagefault);
+              ASSIGN(14, utime);
+              ASSIGN(15, stime);
+              ASSIGN(16, cutime);
+              ASSIGN(17, cstime);
+              ASSIGNLAST(24, res);
+            }
+            #undef ASSIGNLAST
+            #undef ASSIGNRAW
+            #undef ASSIGN
+            col++;
+            val = 0;
+            continue;
+          } else if (c >= '0' && c <= '9') {
+            val = val * 10 + c - '0';
+          } else if (c == '(') {
+            assert(col == 2 /*(comm)*/);
+            if (col != 2) {
+              fprintf(stderr,
+                "error: unrecognized proc/stat format having character "
+                ") outside field 2\n");
+              break;
+            }
+            const char *tail = NULL;
+            const char *search_end = end - 1;
+            for (auto end = search_end; end > cur; end--)
+              if (*end == ')') {
+                tail = end - 1;
+                break;
+              }
+            if (!tail) {
+              fprintf(stderr,
+                      "Error: Could not locate end of comm field in the"
+                      "following proc/stat data:\n");
+              for (auto i = buf; i != end; i++) {
+                if (i == cur) {
+                  fputs(">>>", stderr);
+                }
+                fputc(*i, stderr);
+                if (i == search_end) {
+                  fputs("<<<", stderr);
+                }
+              }
+              fputs("\n", stderr);
+              break;
+            }
+            int comm_len = std::min(tail - cur, (long)TASK_COMM_LEN);
+            for (auto i = 0; i < comm_len; i++)
+              cur_result.comm[i] = cur[i + 1];
+            cur_result.comm[comm_len] = '\0';
+            cur = tail;
+          }
+        }
+        close(fd);
+        if (!success) {
+          // Did not reach last column
+          continue;
+        } else {
+          cur_result.res *= page_size;
+        }
+      }
+    } else {
+      continue;
+    }
+    if (auto f = fopen((basepath + "io").c_str(), "r")) {
+      fscanf(f, "rchar: %ld wchar: %ld", &cur_result.rchar, &cur_result.wchar);
+      fclose(f);
+    } else {
+      cur_result.rchar = cur_result.wchar = 0;
+    }
+    fprintf(stderr,
+      "\n[%s] %d res=%ld minor=%ld utime=%ld stime=%ld rchar=%ld wchar=%ld\n",
+      cur_result.comm, pid, cur_result.res,
+      cur_result.minor_pagefault, cur_result.utime, cur_result.stime,
+      cur_result.rchar, cur_result.wchar);
+    if (auto f = fopen((basepath + "cmdline").c_str(), "r")) {
+      slurm_step_id_t step;
+      char c;
+      #define STEP_MAX_LENGTH 32
+      char step_str[STEP_MAX_LENGTH + 1];
+      if (fscanf(f, "slurmstepd: [%d.%" STRINGIFY(STEP_MAX_LENGTH) "s",
+                 &step.job_id, step_str) == 2
+          && (!fread(&c, sizeof(char), 1, f) || !c)) {
+        // From slurm protocol definition source, reordered with possibility
+        const struct {
+          const char *name;
+          unsigned int stepid;
+        } mapping[] = {
+          { "batch", SLURM_BATCH_SCRIPT },
+          { "interactive", SLURM_INTERACTIVE_STEP },
+          { "extern", SLURM_EXTERN_CONT },
+          { "TBD", SLURM_PENDING_STEP },
+          { NULL, 0 }
+        };
+        bool found_stepid = sscanf(step_str, "%d]", &step.step_id);
+        if (!found_stepid) {
+          size_t len = strlen(step_str) - 1;
+          if (step_str[len] == ']') {
+            step_str[len] = '\0';
+            for (auto *cur = mapping; cur->name; cur++) {
+              if (*step_str == *(cur->name) && !strcmp(step_str, cur->name)) {
+                step.step_id = cur->stepid;
+                found_stepid = true;
+                break;
+              }
+            }
+          }
+        }
+        if (found_stepid) {
+          stepd_pids[pid] = step;
+        }
+      }
+      #undef STEP_MAX_LENGTH
+      fclose(f);
+    }
+    child[ppid].push_back(pid);
+    result[pid] = cur_result;
+  }
+  closedir(proc_dir);
+  for (auto &cpid : child[pid]) {
+    if (auto dir = opendir(("/proc/" + std::to_string(cpid)).c_str())) {
+      closedir(dir);
+    } else if (errno == ENOENT) {
+      // child has terminated approximately at the time of scraping parent
+      // this would double count the c____ fields
+      const auto &STAT_MERGE_SRC = result[cpid];
+      auto &STAT_MERGE_DST = result[pid];
+      ACCUMULATE_SCRAPER_STAT(rchar);
+      ACCUMULATE_SCRAPER_STAT(wchar);
+      AGGERGATE_SCRAPER_STAT_MAX(res);
+      result.erase(cpid);
+      cpid = 0;
+    }
+  }
+}
+
+static void walk_scraped_proc_tree (
+  pid_t cur,
+  process_tree_t &tree,
+  scraper_result_map_t &stats,
+  step_application_set_t &application_set) {
+
+  #define ACCUMULATE_SELF_STAT(NAME) \
+    STAT_MERGE_DST.c##NAME += STAT_MERGE_DST.NAME; \
+    STAT_MERGE_DST.NAME = 0;
+
+  auto &STAT_MERGE_DST = stats[cur];
+  const auto &cur_stat = STAT_MERGE_DST;
+  application_set.emplace(std::string(cur_stat.comm));
+  const auto &childs = tree[cur];
+  ACCUMULATE_SELF_STAT(utime);
+  ACCUMULATE_SELF_STAT(stime);
+  ACCUMULATE_SELF_STAT(minor_pagefault);
+  for (const auto &cpid : childs) {
+    if (!cpid)
+      continue;
+    const auto &STAT_MERGE_SRC = stats[cpid];
+    DEBUGOUT(STAT_MERGE_SRC.print();)
+    walk_scraped_proc_tree(cpid, tree, stats, application_set);
+    // ____ of child is already in c____ of parent, but not recursive
+    ACCUMULATE_SCRAPER_STAT(rchar);
+    ACCUMULATE_SCRAPER_STAT(wchar);
+    ACCUMULATE_SCRAPER_STAT(cutime);
+    ACCUMULATE_SCRAPER_STAT(cstime);
+    ACCUMULATE_SCRAPER_STAT(cminor_pagefault);
+    AGGERGATE_SCRAPER_STAT_MAX(res);
+  }
+  #undef ACCUMULATE_LEAF_STAT
+}
+
 // Implemented as RPC-free
 void scraper() {
-
+  time_t timeout = 0;
+  int clk_tck = sysconf(_SC_CLK_TCK);
+  printf("tick: %d\n", clk_tck);
+  fflush(stdout);
+  while (wait_until(timeout)) {
+    timeout = time(NULL) + SCRAPE_INTERVAL;
+    process_tree_t child;
+    scraper_result_map_t result;
+    stepd_step_id_map_t stepd_pids;
+    fetch_proc_stats(child, result, stepd_pids);
+    for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
+      step_application_set_t apps;
+      walk_scraped_proc_tree(stepd_pid, child, result, apps);
+      auto &final_result = result[stepd_pid];
+      #define MERGECHILD(FIELD) \
+        final_result.FIELD += final_result.c##FIELD; \
+        final_result.c##FIELD = 0;
+      MERGECHILD(minor_pagefault);
+      MERGECHILD(utime);
+      MERGECHILD(stime);
+      #undef MERGECHILD
+      apps.erase("slurmstepd");
+      DEBUGOUT(
+        fputs("===> ", stderr);
+        bool first = 1;
+        for (const auto &app : apps) {
+          fprintf(stderr, "%s%s", first ? "{" : ", ", app.c_str());
+          first = 0;
+        }
+        fprintf(stderr, "} [%d.%d] ",
+          stepd_step_id.job_id, stepd_step_id.step_id);
+        final_result.print(0);
+        fputs("\n", stderr);
+      )
+    }
+  }
 }
 
 void parent(int argc, const char *argv[]) {

@@ -24,5 +24,50 @@ constexpr int SCRAPE_CONCURRENT_NODES = 4;
 #define GPU_UTIL_MULTIPLIER 1e4
 typedef double gpu_util_t;
 
+#define READ_BUF_SIZE 4096
+
+#define TASK_COMM_LEN 32
+struct scrape_result_t {
+  char comm[TASK_COMM_LEN + 1];
+  pid_t pid;
+  size_t res;
+
+  size_t minor_pagefault;
+  size_t cminor_pagefault;
+
+  time_t utime;
+  time_t cutime;
+  time_t stime;
+  time_t cstime;
+
+  /* Privileged info, -1 == NULL */
+  size_t rchar;
+  size_t wchar;
+
+  void print(bool report_child = 1) const {
+    fprintf(stderr, "%s pid=%d res=%ld minor=%ld",
+      comm, pid, res, minor_pagefault);
+    if (report_child) {
+      fprintf(stderr, " cminor=%ld", cminor_pagefault);
+    }
+    fprintf(stderr, " utime=%ld stime=%ld", utime, stime);
+    if (report_child) {
+      fprintf(stderr, " cutime=%ld cstime=%ld", cutime, cstime);
+    }
+    fprintf(stderr, " rchar=%ld wchar=%ld\n", rchar, wchar);
+  }
+};
+typedef std::map<pid_t, std::vector<pid_t> > process_tree_t;
+typedef std::map<pid_t, scrape_result_t> scraper_result_map_t;
+typedef std::map<pid_t, slurm_step_id_t> stepd_step_id_map_t;
+typedef std::set<std::string> step_application_set_t;
+
+#define STAT_MERGE_DST my_stat
+#define STAT_MERGE_SRC child_stat
+#define ACCUMULATE_SCRAPER_STAT(NAME) \
+  STAT_MERGE_DST.NAME += STAT_MERGE_SRC.NAME
+#define AGGERGATE_SCRAPER_STAT_MAX(NAME) \
+  STAT_MERGE_DST.NAME = std::max(STAT_MERGE_SRC.NAME, STAT_MERGE_DST.NAME);
+
 #undef FREQ
 #endif

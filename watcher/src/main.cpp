@@ -192,7 +192,7 @@ static inline bool initialize(int argc, char *argv[]) {
   }
   if (is_scraper || is_parent) {
     hostname = (char *)malloc(HOST_NAME_MAX);
-    if (!gethostname(hostname, HOST_NAME_MAX)) {
+    if (gethostname(hostname, HOST_NAME_MAX)) {
       perror("gethostname");
       return false;
     }
@@ -213,7 +213,7 @@ int main(int argc, char *argv[]) {
   build_sqlite_conn();
   if (argc == 1) {
     if (is_scraper) {
-      // scrap data
+      scraper();
     } else {
       watcher();
     }
