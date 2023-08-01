@@ -4,9 +4,9 @@ static sqlite3_stmt *end_transaction_stmt = NULL;
 
 void finalize_stmt_array(sqlite3_stmt *stmt_to_finalize[]) {
   auto cur = stmt_to_finalize;
-  while (*cur) {
+  while (*cur != FINALIZE_END_ADDR) {
     if (!IS_SQLITE_OK(sqlite3_finalize(*cur))) {
-      SQLITE3_PERROR("finalize(worker)");
+      SQLITE3_PERROR("finalize");
     }
     cur++;
   }
@@ -15,7 +15,7 @@ void finalize_stmt_array(sqlite3_stmt *stmt_to_finalize[]) {
 void db_common_finalize() {
   sqlite3_stmt *stmt_to_finalize[] = {
     end_transaction_stmt,
-    NULL
+    FINALIZE_END_ADDR
   };
   finalize_stmt_array(stmt_to_finalize);
 }

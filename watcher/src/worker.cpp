@@ -7,7 +7,7 @@ void worker_finalize() {
   sqlite3_stmt *stmt_to_finalize[] = {
     measurement_insert,
     jobinfo_insert,
-    NULL
+    FINALIZE_END_ADDR
   };
   finalize_stmt_array(stmt_to_finalize);
 }
