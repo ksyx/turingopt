@@ -587,7 +587,6 @@ void scraper(const char *argv_0) {
   }
   sqlite3_begin_transaction();
   for (auto &[id, result] : stats) {
-    fprintf(stderr, "inserting record for %d.%d\n", id.job_id, id.step_id);
     measurement_record_insert(id, result);
     // Keep this part the last one in the loop
     SQLITE3_BIND_START;
