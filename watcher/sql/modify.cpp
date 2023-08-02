@@ -47,3 +47,8 @@ const char *JOBINFO_INSERT_SQL = SQLITE_CODEBLOCK(
     :mem, :node, :ngpu
   ) ON CONFLICT DO NOTHING
 );
+
+const char *APPLICATION_USAGE_INSERT_SQL = SQLITE_CODEBLOCK(
+  INSERT INTO application_usage(jobid, stepid, application)
+    VALUES(:jobid, :stepid, :application) ON CONFLICT DO NOTHING
+);

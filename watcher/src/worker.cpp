@@ -2,11 +2,13 @@
 
 static sqlite3_stmt *measurement_insert;
 static sqlite3_stmt *jobinfo_insert;
+static sqlite3_stmt *application_usage_insert;
 
 void worker_finalize() {
   sqlite3_stmt *stmt_to_finalize[] = {
     measurement_insert,
     jobinfo_insert,
+    application_usage_insert,
     FINALIZE_END_ADDR
   };
   finalize_stmt_array(stmt_to_finalize);
@@ -406,11 +408,13 @@ static inline void fetch_proc_stats (
     } else {
       cur_result.rchar = cur_result.wchar = 0;
     }
-    fprintf(stderr,
-      "\n[%s] %d res=%ld minor=%ld utime=%ld stime=%ld rchar=%ld wchar=%ld\n",
-      cur_result.comm, pid, cur_result.res,
-      cur_result.minor_pagefault, cur_result.utime, cur_result.stime,
-      cur_result.rchar, cur_result.wchar);
+    DEBUGOUT_VERBOSE(
+      fprintf(stderr,
+        "\n[%s] %d res=%ld minor=%ld utime=%ld stime=%ld rchar=%ld wchar=%ld\n",
+        cur_result.comm, pid, cur_result.res,
+        cur_result.minor_pagefault, cur_result.utime, cur_result.stime,
+        cur_result.rchar, cur_result.wchar);
+    );
     if (auto f = fopen((basepath + "cmdline").c_str(), "r")) {
       slurm_step_id_t step;
       char c;
@@ -508,9 +512,20 @@ static void walk_scraped_proc_tree (
 
 // Implemented as RPC-free
 void scraper(const char *argv_0) {
+  #define OP "(application_usage)"
   time_t timeout = 0;
   int scrape_cnt = run_once ? 1 : SCRAPE_CNT;
   std::vector<std::pair<slurm_step_id_t, scrape_result_t>> stats;
+  if (
+    !setup_stmt(application_usage_insert, APPLICATION_USAGE_INSERT_SQL, OP)) {
+    return;
+  }
+  // Theoretically this implementation could merge two different steps with same
+  // pid, happening when, within one scraping session, one exits and the pids
+  // somehow rolled rocket fast and *luckily* the next slurmstepd got this pid
+  // again. With this luck it is suggested that you buy a lottery and share me 5
+  // million if u got a jackpot :)
+  std::map<pid_t /*slurmstepd_pid*/, step_application_set_t> app_map;
   while (scrape_cnt-- && wait_until(timeout)) {
     timeout = time(NULL) + SCRAPE_INTERVAL;
     process_tree_t child;
@@ -518,10 +533,10 @@ void scraper(const char *argv_0) {
     stepd_step_id_map_t stepd_pids;
     fetch_proc_stats(child, result, stepd_pids);
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
-      step_application_set_t apps;
       if (jobstep_info.job_id && stepd_step_id.job_id != jobstep_info.job_id) {
         continue;
       }
+      step_application_set_t &apps = app_map[stepd_pid];
       walk_scraped_proc_tree(stepd_pid, child, result, apps);
       auto &final_result = result[stepd_pid];
       #define MERGECHILD(FIELD) \
@@ -532,6 +547,7 @@ void scraper(const char *argv_0) {
       MERGECHILD(stime);
       #undef MERGECHILD
       apps.erase("slurmstepd");
+      apps.erase("slurm_script");
       DEBUGOUT(
         fputs("===> ", stderr);
         bool first = 1;
@@ -571,12 +587,42 @@ void scraper(const char *argv_0) {
   }
   sqlite3_begin_transaction();
   for (auto &[id, result] : stats) {
+    fprintf(stderr, "inserting record for %d.%d\n", id.job_id, id.step_id);
     measurement_record_insert(id, result);
+    // Keep this part the last one in the loop
+    SQLITE3_BIND_START;
+    NAMED_BIND_INT(application_usage_insert, ":jobid", id.job_id);
+    NAMED_BIND_INT(application_usage_insert, ":stepid", id.step_id);
+    if (BIND_FAILED) {
+      continue;
+    }
+    SQLITE3_BIND_END;
+    if (app_map.count(result.pid)) {
+      auto &apps = app_map[result.pid];
+      for (const auto &app : apps) {
+        SQLITE3_BIND_START;
+        NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
+        if (BIND_FAILED) {
+          continue;
+        }
+        SQLITE3_BIND_END;
+        if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
+          SQLITE3_PERROR("step" OP);
+          continue;
+        }
+        if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
+          SQLITE3_PERROR("reset" OP);
+          continue;
+        }
+      }
+      app_map.erase(result.pid);
+    }
   }
   if (!sqlite3_end_transaction()) {
     // anyway im leaving..
     exit(1);
   }
+  #undef OP
 }
 
 void parent(int argc, const char *argv[]) {

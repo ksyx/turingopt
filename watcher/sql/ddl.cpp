@@ -126,4 +126,11 @@ CREATE TRIGGER IF NOT EXISTS measurements_upd BEFORE UPDATE ON measurements
 BEGIN
   SELECT RAISE(ABORT, 'Update of measurement record not supported');
 END;
+
+CREATE TABLE IF NOT EXISTS application_usage(
+  jobid INTEGER NOT NULL CHECK(jobid > 0),
+  stepid INTEGER NOT NULL,
+  application TEXT NOT NULL,
+  PRIMARY KEY(jobid, stepid, application)
+) WITHOUT ROWID;
 );

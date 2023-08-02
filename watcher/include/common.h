@@ -35,9 +35,16 @@
 
 #define SLURM_USER_IS_PRIVILEGED 0
 #define ENABLE_DEBUGOUT 1
+#define ENABLE_VERBOSE_DEBUGOUT 0
 #if ENABLE_DEBUGOUT
 #define DEBUGOUT(X) X
+#if ENABLE_VERBOSE_DEBUGOUT
+#define DEBUGOUT_VERBOSE(X) X
 #else
+#define DEBUGOUT_VERBOSE(X) ;
+#endif
+#else
+#define DEBUGOUT_VERBOSE(X) ;
 #define DEBUGOUT(X) ;
 #endif
 
