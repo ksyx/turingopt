@@ -315,6 +315,9 @@ static inline void fetch_proc_stats (
     int fd = open((basepath + "stat").c_str(), O_RDONLY);
     if (fd) {
       if (auto cnt = read(fd, buf, READ_BUF_SIZE)) {
+        if (cnt < 0) {
+          continue;
+        }
         const char *end = buf + cnt;
         const char *cur = buf;
         int col = 1;
@@ -366,7 +369,7 @@ static inline void fetch_proc_stats (
             if (!tail) {
               fprintf(stderr,
                       "Error: Could not locate end of comm field in the"
-                      "following proc/stat data:\n");
+                      "following proc/stat data [%ld bytes read]:\n", cnt);
               for (auto i = buf; i != end; i++) {
                 if (i == cur) {
                   fputs(">>>", stderr);
