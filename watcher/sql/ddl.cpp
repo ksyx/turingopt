@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS watcher(
     || CASE WHEN stepid IS NOT NULL THEN CAST(stepid AS TEXT) ELSE "n" END)
   STORED,
 
-  /* Statement level CAS */
+  /* Fetch and update range in one statement */
   lastfetch INTEGER NOT NULL DEFAULT(unixepoch('now')),
   prev_lastfetch INTEGER NOT NULL DEFAULT(unixepoch('now', '-28 days'))
     CHECK(prev_lastfetch <= lastfetch),

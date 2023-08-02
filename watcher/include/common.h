@@ -34,12 +34,23 @@
 #include "sql.h"
 
 #define SLURM_USER_IS_PRIVILEGED 0
-#define ENABLE_DEBUGOUT 0
+#define ENABLE_DEBUGOUT 1
 #if ENABLE_DEBUGOUT
 #define DEBUGOUT(X) X
 #else
 #define DEBUGOUT(X) ;
 #endif
+
+#define WATCHER_ENV_PREFIX "TURING_WATCH_"
+#define WATCHER_ENV(X) WATCHER_ENV_PREFIX X
+#define IS_SCRAPER_ENV WATCHER_ENV("SCRAPER")
+#define DB_FILE_ENV WATCHER_ENV("DB_FILE")
+#define PRINT_ONLY_ENV WATCHER_ENV("PRINT_ONLY")
+#define RUN_ONCE_ENV WATCHER_ENV("RUN_ONCE")
+#define UPDATE_JOBINFO_ONLY_ENV WATCHER_ENV("UPDATE_JOBINFO_ONLY")
+#define DEFAULT_DB_PATH "./turingwatch.db"
+
+#define RESTORE_ENV 0
 
 typedef char *(*slurm_job_state_string_func_t)(uint32_t);
 extern slurm_job_state_string_func_t slurm_job_state_string;
@@ -91,6 +102,8 @@ extern void *slurm_conn;
 extern char *hostname;
 extern pid_t pid;
 extern bool is_privileged;
+extern bool run_once;
+extern bool update_jobinfo_only;
 extern worker_type_t worker_type;
 #define is_scraper (worker_type == WORKER_SCRAPER)
 #define is_parent (worker_type == WORKER_PARENT)

@@ -112,35 +112,31 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
 }
 
 static void
-measurement_record_insert(
-  slurmdb_step_rec_t *step,
-  const size_t *minor_pagefault = NULL,
-  const gpu_util_t *gpu_util = NULL) {
+measurement_record_insert(const measurement_rec_t &m) {
   #define OP "(measurement_insert)"
   if (!setup_stmt(measurement_insert, MEASUREMENTS_INSERT_SQL, OP)) {
     return;
   }
-  tres_t tres_in(step->stats.tres_usage_in_tot);
-  tres_t tres_out(step->stats.tres_usage_out_tot);
-  tres_t tres_max(step->stats.tres_usage_in_max);
   SQLITE3_BIND_START
   #define BIND(TY, VAR, VAL) \
     SQLITE3_NAMED_BIND(TY, measurement_insert, VAR, VAL);
   BIND(int, ":watcherid", watcher_id);
-  BIND(int, ":jobid", step->job_ptr->jobid);
-  BIND(int, ":stepid", step->step_id.step_id);
-  BIND(int64, ":dev_in", tres_in[DISK_TRES]);
-  BIND(int64, ":dev_out", tres_out[DISK_TRES]);
-  BIND(int64, ":res_size", tres_max[MEM_TRES]);
-  if (minor_pagefault) {
-    BIND(int64, ":minor_pagefault", *minor_pagefault);
+  BIND(int, ":jobid", m.step_id->job_id);
+  BIND(int, ":stepid", m.step_id->step_id);
+  if (m.dev_in) {
+    BIND(int64, ":dev_in", *m.dev_in);
+    BIND(int64, ":dev_out", *m.dev_out);
   }
-  if (gpu_util) {
-    BIND(int, ":gpu_util", (int)(*gpu_util * GPU_UTIL_MULTIPLIER));
+  BIND(int64, ":res_size", *m.res_size);
+  if (m.minor_pagefault) {
+    BIND(int64, ":minor_pagefault", *m.minor_pagefault);
+  }
+  if (m.gpu_util) {
+    BIND(int, ":gpu_util", (int)(*m.gpu_util * GPU_UTIL_MULTIPLIER));
   }
   #define BINDTIMING(VAR) \
-    BIND(int64, ":" #VAR "_sec", step->VAR##_cpu_sec); \
-    BIND(int, ":" #VAR "_usec", step->VAR##_cpu_usec);
+    BIND(int64, ":" #VAR "_sec", *m.VAR##_cpu_sec); \
+    BIND(int, ":" #VAR "_usec", *m.VAR##_cpu_usec);
   BINDTIMING(sys); BINDTIMING(user);
   #undef BINDTIMING
   #undef BIND
@@ -154,6 +150,60 @@ measurement_record_insert(
     return;
   }
   #undef OP
+}
+
+static inline void measurement_record_insert(slurmdb_step_rec_t *step) {
+  measurement_rec_t m;
+  tres_t tres_in(step->stats.tres_usage_in_tot);
+  tres_t tres_out(step->stats.tres_usage_out_tot);
+  tres_t tres_max(step->stats.tres_usage_in_max);
+  m.step_id = &step->step_id;
+  m.dev_in = &tres_in[DISK_TRES];
+  m.dev_out = &tres_out[DISK_TRES];
+  m.res_size = &tres_max[MEM_TRES];
+  m.minor_pagefault = NULL;
+  m.gpu_util = NULL;
+  #define BINDTIMING(FIELD) \
+    m.FIELD##_cpu_sec = &step->FIELD##_cpu_sec; \
+    m.FIELD##_cpu_usec = &step->FIELD##_cpu_usec;
+  BINDTIMING(sys);
+  BINDTIMING(user);
+  #undef BINDTIMING
+  measurement_record_insert(m);
+}
+
+static inline void measurement_record_insert(
+  slurm_step_id_t stepid, const scrape_result_t result) {
+  static const size_t clk_tck = sysconf(_SC_CLK_TCK);
+  measurement_rec_t m;
+  m.step_id = &stepid;
+  m.res_size = &result.res;
+  m.minor_pagefault = &result.minor_pagefault;
+  m.gpu_util = NULL;
+  auto split_ticks = [](uint64_t *sec, uint32_t *usec, const size_t ticks) {
+    // clk_tck ticks per second --> clk_tck/1e6 ticks per usec
+    // [1e6/clk_tck usec per tick] * tick = usec
+    *sec = ticks / clk_tck;
+    *usec = (ticks % clk_tck) * (1e6 / clk_tck);
+  };
+  uint64_t sys_cpu_sec;
+  uint64_t user_cpu_sec;
+  uint32_t sys_cpu_usec;
+  uint32_t user_cpu_usec;
+  split_ticks(&sys_cpu_sec, &sys_cpu_usec, result.stime);
+  split_ticks(&user_cpu_sec, &user_cpu_usec, result.utime);
+  #define BINDTIMING(FIELD, RESULTFIELD) \
+    split_ticks(&FIELD##_cpu_sec, &FIELD##_cpu_usec, result.RESULTFIELD##time);\
+    m.FIELD##_cpu_sec = &FIELD##_cpu_sec; \
+    m.FIELD##_cpu_usec = &FIELD##_cpu_usec;
+  BINDTIMING(sys, s);
+  BINDTIMING(user, u);
+  #undef BINDTIMING
+  if (result.rchar) {
+    m.dev_in = &result.rchar;
+    m.dev_out = &result.wchar;
+  }
+  measurement_record_insert(m);
 }
 
 static inline bool wait_until(time_t timeout) {
@@ -177,7 +227,7 @@ void watcher() {
   condition->flags |= JOBCOND_FLAG_NO_TRUNC;
   condition->db_flags = SLURMDB_JOB_FLAG_NOTSET;
   time_t timeout = 0;
-  while (wait_until(timeout)) {
+  do {
     if (timeout) {
       renew_watcher(UPSERT_WATCHER_SQL_RETURNING_TIMESTAMP_RANGE);
     }
@@ -191,6 +241,9 @@ void watcher() {
     while (const auto job = (slurmdb_job_rec_t *) slurm_list_next(job_it)) {
       sqlite3_begin_transaction();
       jobinfo_record_insert(job);
+      if (update_jobinfo_only) {
+        goto skip_acct;
+      }
       #if !SLURM_TRACK_STEPS_REMOVED
       if (!job->track_steps && !job->steps) {
         auto job_step =
@@ -221,6 +274,7 @@ void watcher() {
         }
         slurm_list_iterator_destroy(step_it);
       }
+      skip_acct:;
       DEBUGOUT(
         fprintf(stderr, "Ending transaction for job %d\n", job->jobid)
       );
@@ -233,7 +287,7 @@ void watcher() {
     slurm_list_destroy(job_list);
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
-  }
+  } while (!run_once && (wait_until(timeout)));
   free(condition);
 }
 
@@ -447,12 +501,11 @@ static void walk_scraped_proc_tree (
 }
 
 // Implemented as RPC-free
-void scraper() {
+void scraper(const char *argv_0) {
   time_t timeout = 0;
-  int clk_tck = sysconf(_SC_CLK_TCK);
-  printf("tick: %d\n", clk_tck);
-  fflush(stdout);
-  while (wait_until(timeout)) {
+  int scrape_cnt = run_once ? 1 : SCRAPE_CNT;
+  std::vector<std::pair<slurm_step_id_t, scrape_result_t>> stats;
+  while (scrape_cnt-- && wait_until(timeout)) {
     timeout = time(NULL) + SCRAPE_INTERVAL;
     process_tree_t child;
     scraper_result_map_t result;
@@ -460,6 +513,9 @@ void scraper() {
     fetch_proc_stats(child, result, stepd_pids);
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
       step_application_set_t apps;
+      if (jobstep_info.job_id && stepd_step_id.job_id != jobstep_info.job_id) {
+        continue;
+      }
       walk_scraped_proc_tree(stepd_pid, child, result, apps);
       auto &final_result = result[stepd_pid];
       #define MERGECHILD(FIELD) \
@@ -482,7 +538,38 @@ void scraper() {
         final_result.print(0);
         fputs("\n", stderr);
       )
+      stats.push_back(std::make_pair(stepd_step_id, final_result));
     }
+  }
+  if (is_scraper) {
+    // not being called from parent()
+    #if RESTORE_ENV
+    setenv(IS_SCRAPER_ENV "_BACKUP", getenv(IS_SCRAPER_ENV), true);
+    #endif
+    unsetenv(IS_SCRAPER_ENV);
+    // No one cares what's inside, as long as they exists
+    setenv(RUN_ONCE_ENV, "1", false);
+    setenv(UPDATE_JOBINFO_ONLY_ENV, "1", false);
+    system(argv_0);
+    DEBUGOUT(fputs("Job information updated\n",stderr););
+    #if RESTORE_ENV
+    setenv(IS_SCRAPER_ENV, getenv(IS_SCRAPER_ENV "_BACKUP"), true);
+    unsetenv(IS_SCRAPER_ENV "_BACKUP")
+    if (!run_once) {
+      unsetenv(RUN_ONCE_ENV);
+    }
+    if (!update_jobinfo_only) {
+      unsetenv(UPDATE_JOBINFO_ONLY_ENV);
+    }
+    #endif
+  }
+  sqlite3_begin_transaction();
+  for (auto &[id, result] : stats) {
+    measurement_record_insert(id, result);
+  }
+  if (!sqlite3_end_transaction()) {
+    // anyway im leaving..
+    exit(1);
   }
 }
 

@@ -10,6 +10,8 @@ pid_t pid;
 bool is_privileged;
 worker_type_t worker_type;
 slurm_step_id_t jobstep_info;
+bool run_once;
+bool update_jobinfo_only;
 
 // Watcher Parameters
 int watcher_id;
@@ -98,8 +100,14 @@ static inline void build_sqlite_conn() {
   sqlite3_free(sqlite_err);
 
   // Register watcher
+  sqlite3_begin_transaction();
   if (!renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID)) {
     exit(1);
+  }
+  if (update_jobinfo_only) {
+    sqlite3_exec(SQL_CONN_NAME, "ROLLBACK;", NULL, NULL, NULL);
+  } else {
+    sqlite3_end_transaction();
   }
 }
 
@@ -141,6 +149,13 @@ static inline bool initialize(int argc, char *argv[]) {
     worker_type = WORKER_SCRAPER;
   } else {
     worker_type = WORKER_WATCHER;
+  }
+  run_once = getenv(RUN_ONCE_ENV);
+  update_jobinfo_only = getenv(UPDATE_JOBINFO_ONLY_ENV);
+  if (update_jobinfo_only && !run_once) {
+    fputs("error: invalid combination update_jobinfo_only && !run_once",
+          stderr);
+    exit(1);
   }
   pid = getpid();
   if (!is_scraper) {
@@ -213,7 +228,7 @@ int main(int argc, char *argv[]) {
   build_sqlite_conn();
   if (argc == 1) {
     if (is_scraper) {
-      scraper();
+      scraper(argv[0]);
     } else {
       watcher();
     }

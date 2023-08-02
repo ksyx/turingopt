@@ -1,12 +1,18 @@
 #include "sql_helper.h"
 
-#define _RENEW_WATCHER_RETURNING_TIMESTAMP_RANGE_SQL SQLITE_CODEBLOCK( \
+#define _RENEW_SQL(FIELD, NEW_VAL) \
+  " UPDATE SET(" FIELD ", prev_" FIELD ") = (" NEW_VAL ", " FIELD ")" \
+  "   RETURNING prev_" FIELD " AS start, " FIELD " AS end"
+
+#define _RENEW_SQL_UPSERT(FIELD) \
+  " ON CONFLICT DO " _RENEW_SQL(FIELD, "excluded." FIELD)
+
+#define _RENEW_SQL_BASE SQLITE_CODEBLOCK( \
   INSERT INTO watcher(pid, target_node, jobid, stepid, privileged) \
     VALUES(:pid, :target_node, :jobid, :stepid, :privileged) \
-  ON CONFLICT DO \
-    UPDATE SET (lastfetch, prev_lastfetch) = (excluded.lastfetch, lastfetch) \
-  RETURNING prev_lastfetch AS start, lastfetch AS end \
 )
+ #define _RENEW_WATCHER_RETURNING_TIMESTAMP_RANGE_SQL \
+  _RENEW_SQL_BASE _RENEW_SQL_UPSERT("lastfetch")
 
 const char *REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID
   = _RENEW_WATCHER_RETURNING_TIMESTAMP_RANGE_SQL ", id";
