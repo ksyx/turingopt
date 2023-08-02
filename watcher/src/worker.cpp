@@ -202,6 +202,9 @@ static inline void measurement_record_insert(
   if (result.rchar) {
     m.dev_in = &result.rchar;
     m.dev_out = &result.wchar;
+  } else {
+    m.dev_in = NULL;
+    m.dev_out = NULL;
   }
   measurement_record_insert(m);
 }
