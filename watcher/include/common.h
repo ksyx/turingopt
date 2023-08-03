@@ -14,13 +14,16 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <queue>
 
 #include <stdexcept>
 
+#include <pthread.h>
 #include <linux/futex.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
@@ -47,6 +50,7 @@
 #define DEBUGOUT_VERBOSE(X) ;
 #define DEBUGOUT(X) ;
 #endif
+#define DISTRIBUTE_DUMMY_WATCHER 0
 
 #define WATCHER_ENV_PREFIX "TURING_WATCH_"
 #define WATCHER_ENV(X) WATCHER_ENV_PREFIX X
@@ -115,6 +119,8 @@ extern worker_type_t worker_type;
 #define is_scraper (worker_type == WORKER_SCRAPER)
 #define is_parent (worker_type == WORKER_PARENT)
 extern slurm_step_id_t jobstep_info;
+extern char *db_path;
+extern const char *slurm_conf_path;
 
 // Watcher Parameters
 extern int watcher_id;

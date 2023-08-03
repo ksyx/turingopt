@@ -12,11 +12,16 @@ worker_type_t worker_type;
 slurm_step_id_t jobstep_info;
 bool run_once;
 bool update_jobinfo_only;
+char *db_path;
+// For building srun environment from nothing
+const char *slurm_conf_path;
 
 // Watcher Parameters
 int watcher_id;
 time_t time_range_start;
 time_t time_range_end;
+
+bool distribute_node_watcher_only;
 
 slurm_job_state_string_func_t slurm_job_state_string;
 
@@ -83,10 +88,6 @@ void tres_t::print() {
 }
 
 static inline void build_sqlite_conn() {
-  char *db_path = getenv(DB_FILE_ENV);
-  if (!db_path) {
-    db_path = (char *)DEFAULT_DB_PATH;
-  }
   if (!IS_SQLITE_OK(sqlite3_open(db_path, &sqlite_conn))) {
     SQLITE3_PERROR("open");
     exit(1);
@@ -139,6 +140,7 @@ static inline bool initialize(int argc, char *argv[]) {
   slurm_job_state_string
     = (slurm_job_state_string_func_t)
         dlsym(RTLD_DEFAULT, "slurm_job_state_string");
+  distribute_node_watcher_only = getenv(DISTRIBUTE_NODE_WATCHER_ONLY);
   if (!slurm_job_state_string) {
     printf("dlsym: %s", dlerror());
     exit(1);
@@ -152,6 +154,10 @@ static inline bool initialize(int argc, char *argv[]) {
   }
   run_once = getenv(RUN_ONCE_ENV);
   update_jobinfo_only = getenv(UPDATE_JOBINFO_ONLY_ENV);
+  db_path = getenv(DB_FILE_ENV);
+  if (!db_path) {
+    db_path = (char *)DEFAULT_DB_PATH;
+  }
   if (update_jobinfo_only && !run_once) {
     fputs("error: invalid combination update_jobinfo_only && !run_once",
           stderr);
@@ -167,13 +173,13 @@ static inline bool initialize(int argc, char *argv[]) {
       return false;
     }
     const uid_t uid = geteuid();
-    const auto is_slurm_user = [uid]() {
-      slurm_conf_t *conf = NULL;
-      if (!IS_SLURM_SUCCESS(slurm_load_ctl_conf(0, &conf))) {
-        slurm_perror("slurm_load_ctl_conf");
-        return false;
-      }
-      slurm_free_ctl_conf(conf);
+    slurm_conf_t *conf = NULL;
+    if (!IS_SLURM_SUCCESS(slurm_load_ctl_conf(0, &conf))) {
+      slurm_perror("slurm_load_ctl_conf");
+      return false;
+    }
+    slurm_conf_path = conf->slurm_conf;
+    const auto is_slurm_user = [conf, uid]() {
       return uid == conf->slurm_user_id;
     };
     if (uid == 0
@@ -184,6 +190,7 @@ static inline bool initialize(int argc, char *argv[]) {
       // scraper could continue with fetching gpu data only
       is_privileged = true;
     }
+    slurm_free_ctl_conf(conf);
     if (is_parent) {
       const char *jobid_env = getenv("SLURM_JOB_ID");
       const char *stepid_env = getenv("SLURM_STEP_ID");
@@ -225,10 +232,16 @@ int main(int argc, char *argv[]) {
     print_only();
     return 0;
   }
-  build_sqlite_conn();
+  if (!distribute_node_watcher_only) {
+    build_sqlite_conn();
+  }
   if (argc == 1) {
     if (is_scraper) {
       scraper(argv[0]);
+    } else if (distribute_node_watcher_only) {
+      pthread_t thread;
+      pthread_create(&thread, NULL, node_watcher_distributor, argv[0]);
+      pthread_join(thread, NULL);
     } else {
       watcher();
     }

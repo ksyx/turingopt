@@ -14,6 +14,8 @@
 #define SQLITE3_BIND_START { bool BIND_FAIL_VAR = false;
 #define SQLITE3_BIND_END }
 #define BIND_NAME(STMT, NAME) sqlite3_bind_parameter_index(STMT, NAME)
+#define BIND_NULL(STMT, ARGNAME) \
+  sqlite3_bind_null(STMT, BIND_NAME(STMT, ARGNAME));
 // Follow VAL with a comma if any varg exists
 #define SQLITE3_NAMED_BIND(TY, STMT, ARGNAME, VAL, ...) \
   if (sqlite3_bind_##TY(STMT, BIND_NAME(STMT, ARGNAME), VAL __VA_ARGS__) \

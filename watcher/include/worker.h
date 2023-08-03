@@ -9,6 +9,7 @@
 #define GPU_TRES TRES_ID("gres/gpu")
 #define MEM_TRES TRES_ID("mem")
 
+#define SCRAPER_JOB_NAME "turingwatch"
 #define FREQ(HOUR, MINUTE, SECOND) HOUR * 60 * 60 + MINUTE * 60 + SECOND
 // The data is always there so just ensure new findings are alerted at a
 // reasonable frequency
@@ -18,7 +19,9 @@ constexpr int ACCOUNTING_RPC_INTERVAL = FREQ(1, 0, 0);
 constexpr int SCRAPE_INTERVAL = FREQ(0, 0, 20);
 constexpr int TOTAL_SCRAPE_TIME_PER_NODE = FREQ(0, 15, 0);
 constexpr int SCRAPE_CNT = TOTAL_SCRAPE_TIME_PER_NODE / SCRAPE_INTERVAL;
+// NOTE: The implementation could use up to double of this concurrency value
 constexpr int SCRAPE_CONCURRENT_NODES = 4;
+constexpr int ALLOCATION_TIMEOUT = 120;
 
 // A multiplier of 1eT converts a gpu_util of [0, 1] to first T digits following
 // the decimal
@@ -76,7 +79,25 @@ struct scrape_result_t {
 typedef std::map<pid_t, std::vector<pid_t> > process_tree_t;
 typedef std::map<pid_t, scrape_result_t> scraper_result_map_t;
 typedef std::map<pid_t, slurm_step_id_t> stepd_step_id_map_t;
+typedef uint32_t node_val_t;
 typedef std::set<std::string> step_application_set_t;
+typedef std::set<std::string> node_set_t;
+typedef std::vector<std::string> node_string_list_t;
+
+struct node_string_part {
+  struct range_t{
+    std::pair<node_val_t /*start*/, node_val_t /*end*/> range;
+    int length;
+  };
+  std::string prefix;
+  std::vector<range_t> ranges;
+};
+
+typedef std::vector<node_string_part> node_group_t;
+typedef std::map<std::string, node_val_t> node_usage_map_t;
+typedef
+std::vector<std::pair<node_val_t /*value_taken*/, uint8_t /*str_len*/>>
+val_assignment_t;
 
 #define STAT_MERGE_DST my_stat
 #define STAT_MERGE_SRC child_stat

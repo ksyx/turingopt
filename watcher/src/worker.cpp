@@ -221,6 +221,13 @@ static inline bool wait_until(time_t timeout) {
   return futex_word;
 }
 
+static inline slurmdb_job_cond_t *setup_job_cond() {
+  auto condition = (slurmdb_job_cond_t *) calloc(1, sizeof(slurmdb_job_cond_t));
+  condition->flags |= JOBCOND_FLAG_NO_TRUNC;
+  condition->db_flags = SLURMDB_JOB_FLAG_NOTSET;
+  return condition;
+}
+
 void watcher() {
   List state_list = slurm_list_create(NULL);
   for (int i = 0; i < JOB_END; i++) {
@@ -228,9 +235,7 @@ void watcher() {
       slurm_list_append(state_list, slurm_job_state_string(i));
     }
   }
-  auto condition = (slurmdb_job_cond_t *) calloc(1, sizeof(slurmdb_job_cond_t));
-  condition->flags |= JOBCOND_FLAG_NO_TRUNC;
-  condition->db_flags = SLURMDB_JOB_FLAG_NOTSET;
+  auto condition = setup_job_cond();
   time_t timeout = 0;
   do {
     if (timeout) {
@@ -293,6 +298,7 @@ void watcher() {
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
   } while (!run_once && (wait_until(timeout)));
+  slurm_list_destroy(state_list);
   free(condition);
 }
 
@@ -622,6 +628,536 @@ void scraper(const char *argv_0) {
     exit(1);
   }
   #undef OP
+}
+
+static void expand_node_group(
+  const node_val_t depth,
+  const node_group_t &node_group,
+  val_assignment_t &assignment_vec,
+  node_string_list_t &result_list
+  ) {
+  if (depth == assignment_vec.size()) {
+    std::string t = "";
+    for (node_val_t i = 0; i < depth; i++) {
+      const auto &group = node_group[i];
+      t += group.prefix;
+      if (group.ranges.size()) {
+        const auto &result = assignment_vec[i];
+        const auto numstr = std::to_string(result.first);
+        size_t missing_len;
+        if ((missing_len = result.second - numstr.length()) > 0) {
+          t += std::string(missing_len, '0');
+        }
+        t += numstr;
+      }
+    }
+    result_list.push_back(t);
+    return;
+  }
+  const auto &range = node_group[depth].ranges;
+  if (!range.size()) {
+    expand_node_group(depth + 1, node_group, assignment_vec, result_list);
+  } else {
+    for (auto &r : range) {
+      auto start = r.range.first;
+      auto end = r.range.second;
+      if (start > end) {
+        // ???
+        std::swap(start, end);
+      }
+      for (node_val_t i = start; i <= end; i++) {
+        assignment_vec[depth] = std::make_pair(i, r.length);
+        expand_node_group(depth + 1, node_group, assignment_vec, result_list);
+      }
+    }
+  }
+}
+
+static inline bool
+split_node_string(node_string_list_t &list, char *str) {
+  static const node_string_part empty;
+  bool in_bracket = 0;
+  node_string_part cur;
+  const char *seg_start = str;
+  bool is_start;
+  node_val_t val[2];
+  uint8_t start_part_length;
+  std::vector<node_group_t> node_description(1);
+  DEBUGOUT_VERBOSE(fprintf(stderr, "input=%s\n", str));
+  // compute-0-[29-30,32-33,35-40,47-54],compute-1-[02-04],compute-2-04
+  // scontrol show hostnames node[1-3,01,1-03,01-03,001-03,001-13,999-1000]
+  while (str) {
+    const auto c = *str;
+    DEBUGOUT_VERBOSE(fprintf(stderr, "ch=%c bracket=%d start=%d 0=%d 1=%d\n",
+                      c, in_bracket, is_start, val[0], val[1]));
+    if (in_bracket) {
+      if (c == ']' || c == ',') {
+        if (is_start) {
+          // still counting left, '-' not met
+          val[1] = val[0];
+        }
+        cur.ranges.push_back(
+          {std::make_pair(val[0], val[1]), start_part_length});
+        if (c == ',') {
+          start_part_length = val[0] = val[1] = 0;
+          is_start = 1;
+        } else if (c == ']') {
+          in_bracket = 0;
+          node_description.back().push_back(cur);
+          cur = empty;
+          seg_start = str + 1;
+        }
+      } else if (c == '-') {
+        is_start = 0;
+      } else if (c >= '0' && c <= '9') {
+        val[!is_start] = val[!is_start] * 10 + c - '0';
+        if (is_start) {
+          start_part_length++;
+        }
+      } else {
+        return false;
+      }
+    } else if (c == '[') {
+      *str = '\0';
+      cur.prefix = std::string(seg_start);
+      in_bracket = 1;
+      start_part_length = val[0] = val[1] = 0;
+      is_start = 1;
+    } else if (c == ',' || !c) {
+      if (str != seg_start) {
+        *str = '\0';
+        cur.prefix = std::string(seg_start);
+        node_description.back().push_back(cur);
+        cur = empty;
+      }
+      if (c == ',') {
+        seg_start = str + 1;
+        node_description.push_back({});
+      } else {
+        break;
+      }
+    }
+    str++;
+  }
+  for (const auto &node_group : node_description) {
+    val_assignment_t vals(node_group.size());
+    expand_node_group(0, node_group, vals, list);
+  }
+  DEBUGOUT_VERBOSE(
+    fputs("output=", stderr);
+    bool first = 1;
+    for (const auto &node : list) {
+      fprintf(stderr, "%s%s", first ? "" : ",", node.c_str());
+      first = 0;
+    }
+    fputs("\n", stderr);
+  )
+  return true;
+}
+
+static inline void send_job(
+  node_string_list_t &allocated_nodes, // Output
+  job_desc_msg_t desc,
+  const node_set_t &excl_set,
+  const char **env,
+  const char **submit_argv,
+  const char *req_nodes = NULL // For printing message only
+) {
+  auto launch_job = [&](resource_allocation_response_msg_t *response) {
+    // WHY WOULD SOME SOFTWARE LIST SOMETHING AS API WHEREAS THERE IS NO WAY
+    // THE USER COULD USE THAT???? --- step_launch
+    pid_t child = fork();
+    if (child > 0) {
+      int wstatus;
+      do {
+        if (waitpid(child, &wstatus, 0) < 0) {
+          perror("waitpid");
+          exit(1);
+        }
+        if (WIFEXITED(wstatus)) {
+          return WEXITSTATUS(wstatus);
+        } else if (WIFSIGNALED(wstatus)) {
+          return WSTOPSIG(wstatus);
+        }
+      } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+    } else if (!child) {
+      static const char *srun_argv[] = {
+        "srun", "-c", "1", "-N", std::to_string(response->node_cnt).c_str(),
+        "--jobid", std::to_string(response->job_id).c_str(),
+        NULL
+      };
+      auto count_argv = [](const char **arr) {
+        size_t cnt = 0;
+        while (*arr) {
+          arr++;
+          cnt++;
+        }
+        return cnt;
+      };
+      const size_t srun_cnt = count_argv(srun_argv);
+      const size_t submit_cnt = count_argv((const char **)submit_argv);
+      const size_t tot_cnt = srun_cnt + submit_cnt;
+      auto argv = (char **)malloc(sizeof(char *) * (tot_cnt + 1));
+      memcpy(argv, srun_argv, sizeof(char *) * srun_cnt);
+      memcpy(argv + srun_cnt, submit_argv, sizeof(char *) * submit_cnt);
+      argv[tot_cnt] = NULL;
+      execvpe("srun", argv, (char * const *)env);
+    } else {
+      perror("fork");
+    }
+    return 1;
+  };
+  std::string excl_nodes;
+  for (const auto &cur : excl_set) {
+    if (excl_nodes.size()) {
+      excl_nodes += ",";
+    }
+    excl_nodes += std::string(cur);
+  }
+  DEBUGOUT_VERBOSE(fprintf(stderr, "Excluded: %s\n", excl_nodes.c_str()));
+  desc.exc_nodes = (char *)excl_nodes.c_str();
+  auto response = slurm_allocate_resources_blocking(
+    &desc, ALLOCATION_TIMEOUT, NULL);
+  DEBUGOUT(
+    fprintf(stderr,
+            "Requesting nodes %s with account %s partition %s...  ",
+            req_nodes, desc.account, desc.partition);
+  );
+  if (response) {
+    auto *strcopy = (char *)malloc(strlen(response->node_list) + 1);
+    strcpy(strcopy, response->node_list);
+    DEBUGOUT(fprintf(stderr, "GOT %s\n", strcopy));
+    split_node_string(allocated_nodes, strcopy);
+    free((void *)strcopy);
+    launch_job(response);
+    slurm_free_resource_allocation_response_msg(response);
+  } else if (slurm_get_errno() == ETIMEDOUT) {
+    DEBUGOUT(fputs("TIMEOUT\n", stderr));
+  } else {
+    slurm_perror("allocate_resources");
+  }
+}
+
+static inline void
+watcher_distributor_count_nodes(
+  char *nodes, node_val_t nnodes, node_usage_map_t &map) {
+  node_string_list_t node_strings;
+  DEBUGOUT_VERBOSE(
+    fprintf(stderr, "split %s:\n", nodes);
+  );
+  if (!split_node_string(node_strings, nodes)) {
+    fprintf(stderr, "error: could not split string %s\n", nodes);
+    return;
+  }
+  DEBUGOUT_VERBOSE(
+    bool first = 1;
+    for (const auto &str : node_strings) {
+      fprintf(stderr, "%s%s", first ? "" : ",", str.c_str());
+      first = 0;
+    }
+    fputs("\n", stderr);
+  );
+  for (const auto &str : node_strings) {
+    map[str]++;
+  }
+  if (nnodes && node_strings.size() != nnodes) {
+    fprintf(stderr, "error splitting %s: expecting %d, got %ld\n",
+      nodes, nnodes, node_strings.size());
+  }
+}
+
+void *node_watcher_distributor(void *arg) {
+  // Timeout works as a frequency guard that would return quickly to prevent
+  // problematic childs that complete way too fast and stress the scheduler
+  time_t timeout = 0;
+  auto condition = setup_job_cond();
+  node_usage_map_t node_usage_map;
+  std::map<std::string /*partition*/, std::string /*acct*/> partition_account;
+  std::map<std::string, std::string> node_partition;
+  std::map<uint32_t, std::string> qos_name;
+  std::map<std::string, partition_info_t> partition_info;
+  node_set_t nodeset;
+  // Todo: max jobs aware
+  {
+    const char *cur_user = getpwuid(geteuid())->pw_name;
+    auto *assoc_cond =
+      (slurmdb_assoc_cond_t *)calloc(1, sizeof(slurmdb_assoc_cond_t));
+    List user_list = slurm_list_create(NULL);
+    assoc_cond->user_list = user_list;
+    slurm_list_append(user_list, (void *)cur_user);
+    List qos_list = slurmdb_qos_get(slurm_conn, NULL);
+    ListIterator list_it = slurm_list_iterator_create(qos_list);
+    while (
+      const auto qos = (slurmdb_qos_rec_t *) slurm_list_next(list_it)) {
+      qos_name[qos->id] = std::string(qos->name);
+    }
+    slurm_list_iterator_destroy(list_it);
+    slurm_list_destroy(qos_list);
+    List assoc_list = slurmdb_associations_get(slurm_conn, assoc_cond);
+    list_it = slurm_list_iterator_create(assoc_list);
+    while (
+      const auto assoc = (slurmdb_assoc_rec_t *) slurm_list_next(list_it)) {
+      ListIterator qos_list_it = slurm_list_iterator_create(assoc->qos_list);
+      std::string val(assoc->acct);
+      while (const auto part = (const char *) slurm_list_next(qos_list_it)) {
+        std::string key = qos_name[atoi(part/*ition*/)];
+        if (assoc->is_def/*ault*/) {
+          partition_account[key] = val;
+        } else {
+          partition_account.try_emplace(key, val);
+        }
+      }
+    }
+    slurm_list_iterator_destroy(list_it);
+    slurm_list_destroy(assoc_list);
+    slurm_list_destroy(user_list);
+    free(assoc_cond);
+  }
+  while (wait_until(timeout)) {
+    uint32_t concurrency = SCRAPE_CONCURRENT_NODES;
+    // load partitions and assign weight
+    {
+      partition_info_msg_t *partition_msg;
+      struct scraper_partition_info_t {
+        const partition_info_t *orig;
+        // the smaller the higher weight
+        bool operator < (const scraper_partition_info_t &b) const {
+          #define COMPARATOR(FIELD, INFINITEVAL, RET_ME_INFINITE, COMPARATOR) \
+            { \
+              auto &max_a = orig->FIELD; \
+              auto &max_b = b.orig->FIELD; \
+              if (max_a != max_b) { \
+                if (max_a == INFINITEVAL) { \
+                  return RET_ME_INFINITE; \
+                } else if (max_b == INFINITEVAL) { \
+                  return !RET_ME_INFINITE; \
+                } else { \
+                  return max_a COMPARATOR max_b; \
+                } \
+              } \
+            }
+          COMPARATOR(max_nodes, 0, true, >);
+          COMPARATOR(max_time, INFINITE, false, <);
+          // Not a big deal
+          return true;
+        }
+      };
+      if (!slurm_load_partitions(timeout, &partition_msg, 0)) {
+        std::vector<scraper_partition_info_t> usable_partitions;
+        scraper_partition_info_t usable_partition;
+        for (size_t i = 0; i < partition_msg->record_count; i++) {
+          const auto &info = partition_msg->partition_array[i];
+          const std::string name(info.name);
+          if (info.allow_accounts && !partition_account.count(name)) {
+            continue;
+          }
+          usable_partition.orig = &info;
+          usable_partitions.push_back(usable_partition);
+          partition_info[name] = info;
+        }
+        std::sort(usable_partitions.begin(), usable_partitions.end());
+        for (const auto &partition : usable_partitions) {
+          const auto &cur = partition.orig;
+          node_string_list_t nodes;
+          split_node_string(nodes, cur->nodes);
+          for (const auto &node : nodes) {
+            nodeset.emplace(node);
+            node_partition.try_emplace(node, cur->name);
+          }
+        }
+        slurm_free_partition_info_msg(partition_msg);
+      }
+    }
+    struct scrape_task_t {
+      std::string node;
+      int cnt;
+      bool operator < (const scrape_task_t &b) const {
+        return cnt > b.cnt;
+      }
+    };
+    std::map<std::string, std::vector<scrape_task_t> > tasks;
+    {
+      List job_list = slurmdb_jobs_get(slurm_conn, condition);
+      ListIterator job_it = slurm_list_iterator_create(job_list);
+      timeout = time(NULL)
+        + TOTAL_SCRAPE_TIME_PER_NODE
+          * (slurm_list_count(job_list) / concurrency + 1);
+      while (const auto job = (slurmdb_job_rec_t *) slurm_list_next(job_it)) {
+        if (job->state != JOB_RUNNING) {
+          // Slurm was unhappy about filtering it by cond, returning all PENDING
+          // jobs
+          continue;
+        }
+        #if !SLURM_TRACK_STEPS_REMOVED
+        if (!job->track_steps && !job->steps) {
+          watcher_distributor_count_nodes(job->nodes, 0, node_usage_map);
+        } else
+        #endif
+        {
+          ListIterator step_it = slurm_list_iterator_create(job->steps);
+          while (
+            const auto step = (slurmdb_step_rec_t *) slurm_list_next(step_it)) {
+            watcher_distributor_count_nodes
+              (step->nodes, step->nnodes, node_usage_map);
+          }
+          slurm_list_iterator_destroy(step_it);
+        }
+      }
+      slurm_list_iterator_destroy(job_it);
+      slurm_list_destroy(job_list);
+      scrape_task_t task;
+      bool need_restart = 0;
+      for (const auto &[str, val] : node_usage_map) {
+        task.node = str;
+        task.cnt = val;
+        if (!node_partition.count(str)) {
+          need_restart = 1;
+        }
+        tasks[node_partition[str]].push_back(task);
+        DEBUGOUT(fprintf(stderr,
+          "%s[%s] %d\n", str.c_str(), node_partition[str].c_str(), val);)
+      }
+      if (need_restart) {
+        timeout = time(NULL);
+        continue;
+      }
+    }
+    job_desc_msg_t desc;
+    slurm_init_job_desc_msg(&desc);
+    static const char *submit_argv[] = {
+      #if DISTRIBUTE_DUMMY_WATCHER
+      "./dummy.sh",
+      #else
+      (const char *)arg,
+      #endif
+      NULL
+    };
+    desc.argc = 1;
+    desc.argv = (char **)submit_argv;
+    desc.contiguous = 0;
+    desc.submit_line = (char *)submit_argv[0];
+    desc.time_limit = concurrency / 60 + 1;
+    std::string dbenv = std::string(DB_FILE_ENV "=") + std::string(db_path);
+    std::string libpath =
+      std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
+    std::string conf_path_env =
+      std::string("SLURM_CONF=") + std::string(slurm_conf_path);
+    static const char *env[] = {
+      IS_SCRAPER_ENV "=1",
+      dbenv.c_str(),
+      conf_path_env.c_str(),
+      libpath.c_str(),
+      NULL
+    };
+    desc.environment = (char **) env;
+    desc.env_size = 0;
+    {
+      auto cur = env;
+      while (*cur) {
+        desc.env_size++;
+        cur++;
+      }
+    }
+    desc.immediate = 0;
+    desc.name = (char *)SCRAPER_JOB_NAME;
+    desc.open_mode = OPEN_MODE_APPEND;
+    desc.shared = 1;
+    DEBUGOUT(
+      for (auto &[partition, account] : partition_account) {
+        fprintf(stderr, "%s -- %s\n", partition.c_str(), account.c_str());
+      }
+    );
+    for (auto &[partition, task] : tasks) {
+      int s1 = 0, s2 = task.size();
+      DEBUGOUT(
+        fprintf(stderr, "===== Partition %s =====\n", partition.c_str());
+      )
+      auto &info = partition_info[partition];
+      concurrency = SCRAPE_CONCURRENT_NODES;
+      if (info.max_nodes && info.max_nodes != INFINITE) {
+        concurrency = std::min(concurrency, info.max_nodes / 2);
+      }
+      desc.account = (char *)partition_account[partition].c_str();
+      desc.partition = (char *)partition.c_str();
+      std::sort(task.begin(), task.end());
+      size_t cur = 0; bool idx = 0;
+      std::queue<std::string> q[2];
+      std::queue<std::string> nodemix;
+      size_t target = std::min(task.size(), (size_t) concurrency);
+      for (size_t i = 0; i < target; i++) {
+        q[idx].push(task[cur++].node);
+      }
+      while (cur < task.size()) {
+        node_set_t excl_set = nodeset;
+        size_t missing = concurrency * 2 - q[idx].size();
+        while (missing && cur < task.size()) {
+          q[!idx].push(task[cur++].node);
+          missing--;
+        }
+        // Ask slurm to choose [concurrency, 2concurrency] nodes from list
+        desc.max_nodes = q[0].size() + q[1].size();
+        // With a hope that slurm gives as much as possible
+        desc.min_nodes = 1;
+        std::map<std::string, bool> unallocated;
+        std::string req_nodes;
+        for (int i = 0; i < 2; i++) {
+          while (!q[i].empty()) {
+            const auto &cur = q[i].front();
+            unallocated[cur] = i;
+            excl_set.erase(cur);
+            if (req_nodes.size()) {
+              req_nodes += ",";
+            }
+            req_nodes += std::string(cur);
+            q[i].pop();
+          }
+        }
+        node_string_list_t alloc_nodes;
+        send_job
+          (alloc_nodes, desc, excl_set, env, submit_argv, req_nodes.c_str());
+        for (const auto &node : alloc_nodes) {
+          unallocated.erase(node);
+        }
+        s1 += alloc_nodes.size();
+        for (const auto &[node, val] : unallocated) {
+          if (val == idx || cur == task.size()) {
+            nodemix.push(node);
+          } else {
+            q[!idx].push(node);
+          }
+        }
+        idx = !idx;
+      }
+      {
+      node_set_t excl_set = nodeset;
+      while (!nodemix.empty()) {
+        excl_set.erase(nodemix.front());
+        nodemix.pop();
+      }
+      desc.max_nodes = concurrency * 2;
+      // With a hope that slurm gives as much as possible
+      desc.min_nodes = 1;
+      while (1) {
+        node_string_list_t alloc_nodes;
+        send_job(alloc_nodes, desc, excl_set, env, submit_argv, "(mixset)");
+        if (!alloc_nodes.size()) {
+          break;
+        }
+        for (const auto &node : alloc_nodes) {
+          excl_set.insert(node);
+        }
+        s1 += alloc_nodes.size();
+      }
+      }
+      DEBUGOUT(
+        fprintf(stderr,
+          "======== Finally done a round [%d/%d tasks allocated] ========\n",
+          s1, s2);
+      );
+    }
+  }
+  free(condition);
+  return NULL;
 }
 
 void parent(int argc, const char *argv[]) {
