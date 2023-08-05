@@ -106,5 +106,8 @@ val_assignment_t;
 #define AGGERGATE_SCRAPER_STAT_MAX(NAME) \
   STAT_MERGE_DST.NAME = std::max(STAT_MERGE_SRC.NAME, STAT_MERGE_DST.NAME);
 
+bool build_slurmdb_conn();
+bool close_slurmdb_conn();
+
 #undef FREQ
 #endif

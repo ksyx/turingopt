@@ -112,12 +112,27 @@ static inline void build_sqlite_conn() {
   }
 }
 
+bool close_slurmdb_conn() {
+  if (slurm_conn && !IS_SLURM_SUCCESS(slurmdb_connection_close(&slurm_conn))) {
+    slurm_perror("slurmdb_connection_close");
+    return false;
+  }
+  return true;
+}
+
+bool build_slurmdb_conn() {
+  uint16_t connflag;
+  if (!(slurm_conn = slurmdb_connection_get(&connflag))) {
+    slurm_perror("slurmdb_connection_get");
+    return false;
+  }
+  return true;
+}
+
 static void finalize(void) {
   worker_finalize();
   db_common_finalize();
-  if (slurm_conn && !IS_SLURM_SUCCESS(slurmdb_connection_close(&slurm_conn))) {
-    slurm_perror("slurmdb_connection_close");
-  }
+  close_slurmdb_conn();
   if (SQL_CONN_NAME && !IS_SQLITE_OK(sqlite3_close(SQL_CONN_NAME))) {
     SQLITE3_PERROR("close");
   }
@@ -165,11 +180,8 @@ static inline bool initialize(int argc, char *argv[]) {
   }
   pid = getpid();
   if (!is_scraper) {
-    uint16_t connflag;
     slurm_init(NULL);
-    slurm_conn = slurmdb_connection_get(&connflag);
-    if (!slurm_conn) {
-      slurm_perror("slurmdb_connection_get");
+    if (!build_slurmdb_conn()) {
       return false;
     }
     const uid_t uid = geteuid();
@@ -224,17 +236,18 @@ static inline bool initialize(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) {
   atexit(finalize);
+  if (getenv(PRINT_ONLY_ENV)) {
+    if (!build_slurmdb_conn()) {
+      return 1;
+    }
+    print_only();
+    return 0;
+  }
   if (!initialize(argc, argv)) {
     fputs("Error initializing, exiting.\n", stderr);
     return 1;
   }
-  if (getenv(PRINT_ONLY_ENV)) {
-    print_only();
-    return 0;
-  }
-  if (!distribute_node_watcher_only) {
-    build_sqlite_conn();
-  }
+  build_sqlite_conn();
   if (argc == 1) {
     if (is_scraper) {
       scraper(argv[0]);

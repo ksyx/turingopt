@@ -230,15 +230,29 @@ static inline slurmdb_job_cond_t *setup_job_cond() {
 
 void watcher() {
   List state_list = slurm_list_create(NULL);
-  for (int i = 0; i < JOB_END; i++) {
-    if (i != JOB_PENDING) {
-      slurm_list_append(state_list, slurm_job_state_string(i));
+  static_assert(JOB_END < 100 && "Insufficient buffer");
+  static char num_buf[JOB_END * 3];
+  {
+    char *cur = num_buf;
+    int len = 2;
+    for (int i = 0; i < JOB_END; i++) {
+      if (i != JOB_PENDING) {
+        sprintf(cur, "%d", i);
+        slurm_list_append(state_list, cur);
+        cur += len;
+        if (*(cur - 1)) {
+          len++;
+          cur++;
+        }
+      }
     }
   }
   auto condition = setup_job_cond();
   time_t timeout = 0;
+  condition->state_list = state_list;
   do {
     if (timeout) {
+      build_slurmdb_conn();
       renew_watcher(UPSERT_WATCHER_SQL_RETURNING_TIMESTAMP_RANGE);
     }
     time_t curtime = time(NULL);
@@ -286,7 +300,8 @@ void watcher() {
       }
       skip_acct:;
       DEBUGOUT(
-        fprintf(stderr, "Ending transaction for job %d\n", job->jobid)
+        fprintf(stderr, "Ending transaction for job %d [%s]\n",
+          job->jobid, slurm_job_state_string(job->state));
       );
       if (!sqlite3_end_transaction()) {
         // why
@@ -297,6 +312,7 @@ void watcher() {
     slurm_list_destroy(job_list);
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
+    close_slurmdb_conn();
   } while (!run_once && (wait_until(timeout)));
   slurm_list_destroy(state_list);
   free(condition);
@@ -913,7 +929,12 @@ void *node_watcher_distributor(void *arg) {
     slurm_list_destroy(user_list);
     free(assoc_cond);
   }
-  while (wait_until(timeout)) {
+  do {
+    if (timeout) {
+      if (!build_slurmdb_conn()) {
+        exit(1);
+      }
+    }
     uint32_t concurrency = SCRAPE_CONCURRENT_NODES;
     // load partitions and assign weight
     {
@@ -1036,7 +1057,7 @@ void *node_watcher_distributor(void *arg) {
     desc.argv = (char **)submit_argv;
     desc.contiguous = 0;
     desc.submit_line = (char *)submit_argv[0];
-    desc.time_limit = concurrency / 60 + 1;
+    desc.time_limit = TOTAL_SCRAPE_TIME_PER_NODE / 60 + 1;
     std::string dbenv = std::string(DB_FILE_ENV "=") + std::string(db_path);
     std::string libpath =
       std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
@@ -1155,7 +1176,10 @@ void *node_watcher_distributor(void *arg) {
           s1, s2);
       );
     }
-  }
+    if (!close_slurmdb_conn()) {
+      exit(1);
+    }
+  } while (!run_once && wait_until(timeout));
   free(condition);
   return NULL;
 }
