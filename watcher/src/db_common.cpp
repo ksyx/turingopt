@@ -20,7 +20,7 @@ void db_common_finalize() {
   finalize_stmt_array(stmt_to_finalize);
 }
 
-bool renew_watcher(const char *query) {
+bool renew_watcher(const char *query, worker_info_t *worker) {
   #define OP "(renew_watcher)"
   sqlite3_stmt *insert_watcher = NULL;
   if (!IS_SQLITE_OK(
@@ -30,11 +30,11 @@ bool renew_watcher(const char *query) {
     return false;
   }
   SQLITE3_BIND_START;
-  NAMED_BIND_INT(insert_watcher, ":pid", pid);
-  NAMED_BIND_TEXT(insert_watcher, ":target_node", hostname);
-  NAMED_BIND_INT(insert_watcher, ":jobid", jobstep_info.job_id);
-  NAMED_BIND_INT(insert_watcher, ":stepid", jobstep_info.step_id);
-  NAMED_BIND_INT(insert_watcher, ":privileged", is_privileged);
+  NAMED_BIND_INT(insert_watcher, ":pid", worker->pid);
+  NAMED_BIND_TEXT(insert_watcher, ":target_node", worker->hostname);
+  NAMED_BIND_INT(insert_watcher, ":jobid", worker->jobstep_info.job_id);
+  NAMED_BIND_INT(insert_watcher, ":stepid", worker->jobstep_info.step_id);
+  NAMED_BIND_INT(insert_watcher, ":privileged", worker->is_privileged);
   if (BIND_FAILED) {
     return false;
   }

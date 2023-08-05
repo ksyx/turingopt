@@ -3,6 +3,17 @@
 #include "common.h"
 #include "sqlite_helper.h"
 #include "db_common.h"
+#include "messaging.h"
+
+// ========================== FOR DEBUG AND TEST ONLY ==========================
+// THIS OPTION BRINGS KNOWN PROBLEM OF POSSIBLY MISSING MATCHING JOBINFO!!!
+// Set this value to be the length of sleep that waits for last-minute messages
+// Recommended to be 10 secs with manual scraper and 600 secs with distributor
+// 0 = Disable
+#define PROCESS_ALL_MSG_BEFORE_NEXT_ROUND 0 /* secs */
+// ============================================================================
+
+#define GUARANTEED_FREEZE_WAIT 3 /* secs */
 
 #define TRES_ID(X) tres_t::from_str(X)
 #define DISK_TRES TRES_ID("fs/disk")
@@ -30,7 +41,6 @@ typedef double gpu_util_t;
 
 #define READ_BUF_SIZE 4096
 
-#define TASK_COMM_LEN 32
 // No check for existence of mandatory arguments
 struct measurement_rec_t {
   const slurm_step_id_t *step_id;
@@ -46,36 +56,6 @@ struct measurement_rec_t {
   const uint32_t *user_cpu_usec;
 };
 
-struct scrape_result_t {
-  char comm[TASK_COMM_LEN + 1];
-  pid_t pid;
-  size_t res;
-
-  size_t minor_pagefault;
-  size_t cminor_pagefault;
-
-  time_t utime;
-  time_t cutime;
-  time_t stime;
-  time_t cstime;
-
-  /* Privileged info, -1 == NULL */
-  size_t rchar;
-  size_t wchar;
-
-  void print(bool report_child = 1) const {
-    fprintf(stderr, "%s pid=%d res=%ld minor=%ld",
-      comm, pid, res, minor_pagefault);
-    if (report_child) {
-      fprintf(stderr, " cminor=%ld", cminor_pagefault);
-    }
-    fprintf(stderr, " utime=%ld stime=%ld", utime, stime);
-    if (report_child) {
-      fprintf(stderr, " cutime=%ld cstime=%ld", cutime, cstime);
-    }
-    fprintf(stderr, " rchar=%ld wchar=%ld\n", rchar, wchar);
-  }
-};
 typedef std::map<pid_t, std::vector<pid_t> > process_tree_t;
 typedef std::map<pid_t, scrape_result_t> scraper_result_map_t;
 typedef std::map<pid_t, slurm_step_id_t> stepd_step_id_map_t;

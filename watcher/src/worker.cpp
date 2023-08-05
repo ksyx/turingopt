@@ -4,6 +4,8 @@ static sqlite3_stmt *measurement_insert;
 static sqlite3_stmt *jobinfo_insert;
 static sqlite3_stmt *application_usage_insert;
 
+static void collect_msg_queue();
+
 void worker_finalize() {
   sqlite3_stmt *stmt_to_finalize[] = {
     measurement_insert,
@@ -12,6 +14,12 @@ void worker_finalize() {
     FINALIZE_END_ADDR
   };
   finalize_stmt_array(stmt_to_finalize);
+  if (is_watcher) {
+    for (int i = 0; i < 2; i++) {
+      freeze_queue();
+      collect_msg_queue();
+    }
+  }
 }
 
 static inline bool reset_stmt(sqlite3_stmt *stmt, const char *op) {
@@ -174,11 +182,10 @@ static inline void measurement_record_insert(slurmdb_step_rec_t *step) {
   measurement_record_insert(m);
 }
 
-static inline void measurement_record_insert(
-  slurm_step_id_t stepid, const scrape_result_t result) {
+static inline void measurement_record_insert(const scrape_result_t result) {
   static const size_t clk_tck = sysconf(_SC_CLK_TCK);
   measurement_rec_t m;
-  m.step_id = &stepid;
+  m.step_id = &result.step;
   m.res_size = &result.res;
   m.minor_pagefault = &result.minor_pagefault;
   m.gpu_util = NULL;
@@ -209,6 +216,56 @@ static inline void measurement_record_insert(
     m.dev_out = NULL;
   }
   measurement_record_insert(m);
+}
+
+static void collect_msg_queue() {
+  #define OPC "(application_usage)"
+  result_group_t result;
+  while (recombine_queue(result)) {
+    auto old_watcher_id = watcher_id;
+    const auto finalize = [&]() {
+      sqlite3_end_transaction();
+      watcher_id = old_watcher_id;
+    };
+    result.worker.hostname += (size_t) *result.buf;
+    sqlite3_begin_transaction();
+    renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID,
+      &result.worker);
+    while (!result.scrape_results.empty()) {
+      measurement_record_insert(result.scrape_results.front());
+      result.scrape_results.pop();
+    }
+    if (!setup_stmt(application_usage_insert,
+                    APPLICATION_USAGE_INSERT_SQL,
+                    OPC)) {
+      finalize();
+      continue;
+    }
+    while (!result.usages.empty()) {
+      const auto &front = result.usages.front();
+      std::string app(front.app + (size_t) *result.buf);
+      result.usages.pop();
+      // pop must goes before here
+      SQLITE3_BIND_START;
+      NAMED_BIND_INT(application_usage_insert, ":jobid", front.step.job_id);
+      NAMED_BIND_INT(application_usage_insert, ":stepid", front.step.step_id);
+      NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
+      if (BIND_FAILED) {
+        continue;
+      }
+      SQLITE3_BIND_END;
+      if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
+        SQLITE3_PERROR("step" OPC);
+        continue;
+      }
+      if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
+        SQLITE3_PERROR("reset" OPC);
+        break;
+      }
+    }
+    finalize();
+  }
+  #undef OP
 }
 
 static inline bool wait_until(time_t timeout) {
@@ -247,8 +304,13 @@ void watcher() {
       }
     }
   }
+  pthread_t conn_mgr_thread;
+  pthread_create(&conn_mgr_thread, NULL, conn_mgr, NULL);
   auto condition = setup_job_cond();
   time_t timeout = 0;
+  #if !PROCESS_ALL_MSG_BEFORE_NEXT_ROUND
+  bool first_run = 1;
+  #endif
   condition->state_list = state_list;
   do {
     if (timeout) {
@@ -310,6 +372,19 @@ void watcher() {
     }
     slurm_list_iterator_destroy(job_it);
     slurm_list_destroy(job_list);
+    #if PROCESS_ALL_MSG_BEFORE_NEXT_ROUND
+    sleep(PROCESS_ALL_MSG_BEFORE_NEXT_ROUND);
+    freeze_queue();
+    sleep(GUARANTEED_FREEZE_WAIT);
+    collect_msg_queue();
+    #else
+    if (!first_run) {
+      collect_msg_queue();
+    } else {
+      first_run = 0;
+    }
+    #endif
+    freeze_queue();
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
     close_slurmdb_conn();
@@ -533,15 +608,10 @@ static void walk_scraped_proc_tree (
 }
 
 // Implemented as RPC-free
-void scraper(const char *argv_0) {
-  #define OP "(application_usage)"
+void scraper() {
   time_t timeout = 0;
   int scrape_cnt = run_once ? 1 : SCRAPE_CNT;
   std::vector<std::pair<slurm_step_id_t, scrape_result_t>> stats;
-  if (
-    !setup_stmt(application_usage_insert, APPLICATION_USAGE_INSERT_SQL, OP)) {
-    return;
-  }
   // Theoretically this implementation could merge two different steps with same
   // pid, happening when, within one scraping session, one exits and the pids
   // somehow rolled rocket fast and *luckily* the next slurmstepd got this pid
@@ -555,7 +625,8 @@ void scraper(const char *argv_0) {
     stepd_step_id_map_t stepd_pids;
     fetch_proc_stats(child, result, stepd_pids);
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
-      if (jobstep_info.job_id && stepd_step_id.job_id != jobstep_info.job_id) {
+      const auto &watching_job_id = worker.jobstep_info.job_id;
+      if (watching_job_id && stepd_step_id.job_id != watching_job_id) {
         continue;
       }
       step_application_set_t &apps = app_map[stepd_pid];
@@ -570,6 +641,7 @@ void scraper(const char *argv_0) {
       #undef MERGECHILD
       apps.erase("slurmstepd");
       apps.erase("slurm_script");
+      apps.erase("turingwatch");
       DEBUGOUT(
         fputs("===> ", stderr);
         bool first = 1;
@@ -585,65 +657,21 @@ void scraper(const char *argv_0) {
       stats.push_back(std::make_pair(stepd_step_id, final_result));
     }
   }
-  if (is_scraper) {
-    // not being called from parent()
-    #if RESTORE_ENV
-    setenv(IS_SCRAPER_ENV "_BACKUP", getenv(IS_SCRAPER_ENV), true);
-    #endif
-    unsetenv(IS_SCRAPER_ENV);
-    // No one cares what's inside, as long as they exists
-    setenv(RUN_ONCE_ENV, "1", false);
-    setenv(UPDATE_JOBINFO_ONLY_ENV, "1", false);
-    system(argv_0);
-    DEBUGOUT(fputs("Job information updated\n",stderr););
-    #if RESTORE_ENV
-    setenv(IS_SCRAPER_ENV, getenv(IS_SCRAPER_ENV "_BACKUP"), true);
-    unsetenv(IS_SCRAPER_ENV "_BACKUP")
-    if (!run_once) {
-      unsetenv(RUN_ONCE_ENV);
-    }
-    if (!update_jobinfo_only) {
-      unsetenv(UPDATE_JOBINFO_ONLY_ENV);
-    }
-    #endif
-  }
-  sqlite3_begin_transaction();
+  application_usage_t usage;
   for (auto &[id, result] : stats) {
-    measurement_record_insert(id, result);
-    // Keep this part the last one in the loop
-    SQLITE3_BIND_START;
-    NAMED_BIND_INT(application_usage_insert, ":jobid", id.job_id);
-    NAMED_BIND_INT(application_usage_insert, ":stepid", id.step_id);
-    if (BIND_FAILED) {
-      continue;
-    }
-    SQLITE3_BIND_END;
+    usage.step = id;
+    result.step = id;
+    stage_message(result);
     if (app_map.count(result.pid)) {
       auto &apps = app_map[result.pid];
       for (const auto &app : apps) {
-        SQLITE3_BIND_START;
-        NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
-        if (BIND_FAILED) {
-          continue;
-        }
-        SQLITE3_BIND_END;
-        if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
-          SQLITE3_PERROR("step" OP);
-          continue;
-        }
-        if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
-          SQLITE3_PERROR("reset" OP);
-          continue;
-        }
+        usage.app = app.c_str();
+        stage_message(usage);
       }
       app_map.erase(result.pid);
     }
   }
-  if (!sqlite3_end_transaction()) {
-    // anyway im leaving..
-    exit(1);
-  }
-  #undef OP
+  sendout();
 }
 
 static void expand_node_group(
@@ -1062,12 +1090,30 @@ void *node_watcher_distributor(void *arg) {
     std::string libpath =
       std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
     std::string conf_path_env =
-      std::string("SLURM_CONF=") + std::string(slurm_conf_path);
+      std::string("SLURM_CONF=") + slurm_conf_path;
+    const char *port_env_orig = getenv(PORT_ENV);
+    const char *db_host_env_orig = getenv(DB_HOST_ENV);
+    char hostname[HOST_NAME_MAX];
+    if (!db_host_env_orig) {
+      gethostname(hostname, HOST_NAME_MAX);
+    }
+    const char *_run_once = getenv(RUN_ONCE_ENV);
+    const char *run_once = _run_once ? _run_once : "AAA=1";
+    std::string db_host =
+      std::string(DB_HOST_ENV "=")
+      + std::string(db_host_env_orig ? db_host_env_orig : hostname);
+    std::string port_env =
+      std::string(PORT_ENV "=")
+      + (port_env_orig ? std::string(port_env_orig)
+                       : std::to_string(DEFAULT_PORT));
     static const char *env[] = {
       IS_SCRAPER_ENV "=1",
       dbenv.c_str(),
       conf_path_env.c_str(),
       libpath.c_str(),
+      db_host.c_str(),
+      port_env.c_str(),
+      (const char *)run_once,
       NULL
     };
     desc.environment = (char **) env;

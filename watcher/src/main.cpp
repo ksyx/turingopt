@@ -5,16 +5,13 @@ sqlite3 *SQL_CONN_NAME;
 void *slurm_conn;
 
 // Watcher Metadata
-char *hostname;
-pid_t pid;
-bool is_privileged;
-worker_type_t worker_type;
-slurm_step_id_t jobstep_info;
+worker_info_t worker;
+bool is_server;
 bool run_once;
 bool update_jobinfo_only;
 char *db_path;
 // For building srun environment from nothing
-const char *slurm_conf_path;
+std::string slurm_conf_path;
 
 // Watcher Parameters
 int watcher_id;
@@ -130,6 +127,7 @@ bool build_slurmdb_conn() {
 }
 
 static void finalize(void) {
+  close(sock);
   worker_finalize();
   db_common_finalize();
   close_slurmdb_conn();
@@ -160,10 +158,14 @@ static inline bool initialize(int argc, char *argv[]) {
     printf("dlsym: %s", dlerror());
     exit(1);
   }
+  build_socket();
+  auto &worker_type = worker.type;
   if (argc > 1) {
     worker_type = WORKER_PARENT;
   } else if (getenv(IS_SCRAPER_ENV)) {
     worker_type = WORKER_SCRAPER;
+  } else if (distribute_node_watcher_only) {
+    worker_type = WORKER_SPECIAL;
   } else {
     worker_type = WORKER_WATCHER;
   }
@@ -178,7 +180,7 @@ static inline bool initialize(int argc, char *argv[]) {
           stderr);
     exit(1);
   }
-  pid = getpid();
+  worker.pid = getpid();
   if (!is_scraper) {
     slurm_init(NULL);
     if (!build_slurmdb_conn()) {
@@ -190,7 +192,7 @@ static inline bool initialize(int argc, char *argv[]) {
       slurm_perror("slurm_load_ctl_conf");
       return false;
     }
-    slurm_conf_path = conf->slurm_conf;
+    slurm_conf_path = std::string(conf->slurm_conf);
     const auto is_slurm_user = [conf, uid]() {
       return uid == conf->slurm_user_id;
     };
@@ -200,7 +202,7 @@ static inline bool initialize(int argc, char *argv[]) {
     #endif
     ) {
       // scraper could continue with fetching gpu data only
-      is_privileged = true;
+      worker.is_privileged = true;
     }
     slurm_free_ctl_conf(conf);
     if (is_parent) {
@@ -208,11 +210,11 @@ static inline bool initialize(int argc, char *argv[]) {
       const char *stepid_env = getenv("SLURM_STEP_ID");
       if (jobid_env) {
         try {
-          to_integer(jobid_env, &jobstep_info.job_id);
+          to_integer(jobid_env, &worker.jobstep_info.job_id);
           if (stepid_env) {
-            to_integer(stepid_env, &jobstep_info.step_id);
+            to_integer(stepid_env, &worker.jobstep_info.step_id);
           } else {
-            jobstep_info.step_id = -1;
+            worker.jobstep_info.step_id = -1;
           }
         } catch (std::invalid_argument &e) {
           fputs("Invalid job or step id environment variable\n", stderr);
@@ -225,8 +227,8 @@ static inline bool initialize(int argc, char *argv[]) {
     }
   }
   if (is_scraper || is_parent) {
-    hostname = (char *)malloc(HOST_NAME_MAX);
-    if (gethostname(hostname, HOST_NAME_MAX)) {
+    worker.hostname = (char *)malloc(HOST_NAME_MAX);
+    if (gethostname(worker.hostname, HOST_NAME_MAX)) {
       perror("gethostname");
       return false;
     }
@@ -247,14 +249,14 @@ int main(int argc, char *argv[]) {
     fputs("Error initializing, exiting.\n", stderr);
     return 1;
   }
-  build_sqlite_conn();
+  if (is_server) {
+    build_sqlite_conn();
+  }
   if (argc == 1) {
     if (is_scraper) {
-      scraper(argv[0]);
+      scraper();
     } else if (distribute_node_watcher_only) {
-      pthread_t thread;
-      pthread_create(&thread, NULL, node_watcher_distributor, argv[0]);
-      pthread_join(thread, NULL);
+      node_watcher_distributor(argv[0]);
     } else {
       watcher();
     }

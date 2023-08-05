@@ -58,6 +58,8 @@
 #define DB_FILE_ENV WATCHER_ENV("DB_FILE")
 #define PRINT_ONLY_ENV WATCHER_ENV("PRINT_ONLY")
 #define RUN_ONCE_ENV WATCHER_ENV("RUN_ONCE")
+#define DB_HOST_ENV WATCHER_ENV("DB_HOST")
+#define PORT_ENV WATCHER_ENV("PORT")
 #define UPDATE_JOBINFO_ONLY_ENV WATCHER_ENV("UPDATE_JOBINFO_ONLY")
 #define DEFAULT_DB_PATH "./turingwatch.db"
 
@@ -65,6 +67,7 @@
 
 typedef char *(*slurm_job_state_string_func_t)(uint32_t);
 extern slurm_job_state_string_func_t slurm_job_state_string;
+typedef uint16_t protocol_version_t;
 
 #define _STRINGIFY(X) #X
 #define STRINGIFY(X) _STRINGIFY(X)
@@ -103,24 +106,32 @@ enum worker_type_t {
   WORKER_SCRAPER,
   WORKER_WATCHER,
   WORKER_PARENT,
+  WORKER_SPECIAL,
+};
+
+struct worker_info_t {
+  char *hostname;
+  pid_t pid;
+  bool is_privileged;
+  worker_type_t type;
+  slurm_step_id_t jobstep_info;
 };
 
 // Connections
 extern sqlite3 *SQL_CONN_NAME;
 extern void *slurm_conn;
+extern int sock;
+extern bool is_server;
 
 // Watcher Metadata
-extern char *hostname;
-extern pid_t pid;
-extern bool is_privileged;
+extern worker_info_t worker;
 extern bool run_once;
 extern bool update_jobinfo_only;
-extern worker_type_t worker_type;
-#define is_scraper (worker_type == WORKER_SCRAPER)
-#define is_parent (worker_type == WORKER_PARENT)
-extern slurm_step_id_t jobstep_info;
+#define is_watcher (worker.type == WORKER_WATCHER)
+#define is_scraper (worker.type == WORKER_SCRAPER)
+#define is_parent (worker.type == WORKER_PARENT)
 extern char *db_path;
-extern const char *slurm_conf_path;
+extern std::string slurm_conf_path;
 
 // Watcher Parameters
 extern int watcher_id;

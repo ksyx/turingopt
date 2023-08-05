@@ -2,6 +2,7 @@ src = files([
   'src/main.cpp',
   'src/db_common.cpp',
   'src/worker.cpp',
+  'src/messaging.cpp',
 
   # SQL Definitions
   'sql/ddl.cpp',
