@@ -479,23 +479,23 @@ static inline void fetch_proc_stats (
     }
     child[ppid].push_back(pid);
     result[pid] = cur_result;
-  }
-  closedir(proc_dir);
-  for (auto &cpid : child[pid]) {
-    if (auto dir = opendir(("/proc/" + std::to_string(cpid)).c_str())) {
-      closedir(dir);
-    } else if (errno == ENOENT) {
-      // child has terminated approximately at the time of scraping parent
-      // this would double count the c____ fields
-      const auto &STAT_MERGE_SRC = result[cpid];
-      auto &STAT_MERGE_DST = result[pid];
-      ACCUMULATE_SCRAPER_STAT(rchar);
-      ACCUMULATE_SCRAPER_STAT(wchar);
-      AGGERGATE_SCRAPER_STAT_MAX(res);
-      result.erase(cpid);
-      cpid = 0;
+    for (auto &cpid : child[pid]) {
+      if (auto dir = opendir(("/proc/" + std::to_string(cpid)).c_str())) {
+        closedir(dir);
+      } else if (errno == ENOENT) {
+        // child has terminated approximately at the time of scraping parent
+        // this would double count the c____ fields
+        const auto &STAT_MERGE_SRC = result[cpid];
+        auto &STAT_MERGE_DST = result[pid];
+        ACCUMULATE_SCRAPER_STAT(rchar);
+        ACCUMULATE_SCRAPER_STAT(wchar);
+        AGGERGATE_SCRAPER_STAT_MAX(res);
+        result.erase(cpid);
+        cpid = 0;
+      }
     }
   }
+  closedir(proc_dir);
 }
 
 static void walk_scraped_proc_tree (
