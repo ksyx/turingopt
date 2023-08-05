@@ -44,7 +44,7 @@ bool renew_watcher(const char *query) {
     if (IS_SLURM_SUCCESS(ret)) {
       fputs("sqlite3_step" OP ": no result returned\n", stderr);
     } else {
-      SQLITE3_PERROR("step");
+      SQLITE3_PERROR("step" OP);
     }
     return false;
   }
