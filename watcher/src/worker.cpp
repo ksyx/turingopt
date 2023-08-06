@@ -244,12 +244,12 @@ static void collect_msg_queue() {
     while (!result.usages.empty()) {
       const auto &front = result.usages.front();
       std::string app(front.app + (size_t) *result.buf);
-      result.usages.pop();
-      // pop must goes before here
       SQLITE3_BIND_START;
       NAMED_BIND_INT(application_usage_insert, ":jobid", front.step.job_id);
       NAMED_BIND_INT(application_usage_insert, ":stepid", front.step.step_id);
       NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
+      // pop must goes after all bindings
+      result.usages.pop();
       if (BIND_FAILED) {
         continue;
       }
