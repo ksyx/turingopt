@@ -915,12 +915,49 @@ void *node_watcher_distributor(void *arg) {
   // problematic childs that complete way too fast and stress the scheduler
   time_t timeout = 0;
   auto condition = setup_job_cond();
+  List state_list = slurm_list_create(NULL);
+  static char buf[3];
+  static_assert(JOB_RUNNING < 100 && "Buf size too small");
+  sprintf(buf, "%d", JOB_RUNNING);
+  slurm_list_append(state_list, buf);
+  condition->state_list = state_list;
   node_usage_map_t node_usage_map;
   std::map<std::string /*partition*/, std::string /*acct*/> partition_account;
   std::map<std::string, std::string> node_partition;
   std::map<uint32_t, std::string> qos_name;
   std::map<std::string, partition_info_t> partition_info;
   node_set_t nodeset;
+
+  const std::string dbenv = std::string(DB_FILE_ENV "=") + std::string(db_path);
+  const std::string libpath =
+    std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
+  const std::string conf_path_env =
+    std::string("SLURM_CONF=") + slurm_conf_path;
+  const char *port_env_orig = getenv(PORT_ENV);
+  const char *db_host_env_orig = getenv(DB_HOST_ENV);
+  char hostname[HOST_NAME_MAX];
+  if (!db_host_env_orig) {
+    gethostname(hostname, HOST_NAME_MAX);
+  }
+  const char *_run_once = getenv(RUN_ONCE_ENV);
+  const char *run_once_env = _run_once ? _run_once : "AAA=1";
+  const std::string db_host =
+    std::string(DB_HOST_ENV "=")
+    + std::string(db_host_env_orig ? db_host_env_orig : hostname);
+  const std::string port_env =
+    std::string(PORT_ENV "=")
+    + (port_env_orig ? std::string(port_env_orig)
+                      : std::to_string(DEFAULT_PORT));
+  static const char *env[] = {
+    IS_SCRAPER_ENV "=1",
+    dbenv.c_str(),
+    conf_path_env.c_str(),
+    libpath.c_str(),
+    db_host.c_str(),
+    port_env.c_str(),
+    (const char *)run_once_env,
+    NULL
+  };
   // Todo: max jobs aware
   {
     const char *cur_user = getpwuid(geteuid())->pw_name;
@@ -1028,15 +1065,8 @@ void *node_watcher_distributor(void *arg) {
     {
       List job_list = slurmdb_jobs_get(slurm_conn, condition);
       ListIterator job_it = slurm_list_iterator_create(job_list);
-      timeout = time(NULL)
-        + TOTAL_SCRAPE_TIME_PER_NODE
-          * (slurm_list_count(job_list) / concurrency + 1);
+      timeout = time(NULL);
       while (const auto job = (slurmdb_job_rec_t *) slurm_list_next(job_it)) {
-        if (job->state != JOB_RUNNING) {
-          // Slurm was unhappy about filtering it by cond, returning all PENDING
-          // jobs
-          continue;
-        }
         #if !SLURM_TRACK_STEPS_REMOVED
         if (!job->track_steps && !job->steps) {
           watcher_distributor_count_nodes(job->nodes, 0, node_usage_map);
@@ -1086,36 +1116,6 @@ void *node_watcher_distributor(void *arg) {
     desc.contiguous = 0;
     desc.submit_line = (char *)submit_argv[0];
     desc.time_limit = TOTAL_SCRAPE_TIME_PER_NODE / 60 + 1;
-    std::string dbenv = std::string(DB_FILE_ENV "=") + std::string(db_path);
-    std::string libpath =
-      std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
-    std::string conf_path_env =
-      std::string("SLURM_CONF=") + slurm_conf_path;
-    const char *port_env_orig = getenv(PORT_ENV);
-    const char *db_host_env_orig = getenv(DB_HOST_ENV);
-    char hostname[HOST_NAME_MAX];
-    if (!db_host_env_orig) {
-      gethostname(hostname, HOST_NAME_MAX);
-    }
-    const char *_run_once = getenv(RUN_ONCE_ENV);
-    const char *run_once = _run_once ? _run_once : "AAA=1";
-    std::string db_host =
-      std::string(DB_HOST_ENV "=")
-      + std::string(db_host_env_orig ? db_host_env_orig : hostname);
-    std::string port_env =
-      std::string(PORT_ENV "=")
-      + (port_env_orig ? std::string(port_env_orig)
-                       : std::to_string(DEFAULT_PORT));
-    static const char *env[] = {
-      IS_SCRAPER_ENV "=1",
-      dbenv.c_str(),
-      conf_path_env.c_str(),
-      libpath.c_str(),
-      db_host.c_str(),
-      port_env.c_str(),
-      (const char *)run_once,
-      NULL
-    };
     desc.environment = (char **) env;
     desc.env_size = 0;
     {
@@ -1144,6 +1144,9 @@ void *node_watcher_distributor(void *arg) {
       if (info.max_nodes && info.max_nodes != INFINITE) {
         concurrency = std::min(concurrency, info.max_nodes / 2);
       }
+      // hard frequency limit
+      timeout += (task.size() / (concurrency * 2) + 1)
+                  * TOTAL_SCRAPE_TIME_PER_NODE;
       desc.account = (char *)partition_account[partition].c_str();
       desc.partition = (char *)partition.c_str();
       std::sort(task.begin(), task.end());
