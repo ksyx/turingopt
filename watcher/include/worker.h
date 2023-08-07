@@ -24,11 +24,24 @@
 #define FREQ(HOUR, MINUTE, SECOND) HOUR * 60 * 60 + MINUTE * 60 + SECOND
 // The data is always there so just ensure new findings are alerted at a
 // reasonable frequency
-constexpr int ACCOUNTING_RPC_INTERVAL = FREQ(1, 0, 0);
+#define PRODUCTION_FREQ 0
+constexpr int ACCOUNTING_RPC_INTERVAL = FREQ(
+#if PRODUCTION_FREQ
+1, 0, 0
+#else
+0, 5, 0
+#endif
+);
 
 // Scrapers use system call rather than RPC so it is much cheaper to use
 constexpr int SCRAPE_INTERVAL = FREQ(0, 0, 20);
-constexpr int TOTAL_SCRAPE_TIME_PER_NODE = FREQ(0, 15, 0);
+constexpr int TOTAL_SCRAPE_TIME_PER_NODE = FREQ(
+#if PRODUCTION_FREQ
+0, 15, 0
+#else
+0, 1, 0
+#endif
+);
 constexpr int SCRAPE_CNT = TOTAL_SCRAPE_TIME_PER_NODE / SCRAPE_INTERVAL;
 // NOTE: The implementation could use up to double of this concurrency value
 constexpr int SCRAPE_CONCURRENT_NODES = 4;
