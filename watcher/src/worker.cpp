@@ -718,7 +718,11 @@ static void expand_node_group(
 }
 
 static inline bool
-split_node_string(node_string_list_t &list, char *str) {
+split_node_string(
+  node_string_list_t &list, char *str, bool disable_expansion = false) {
+  if (!str) {
+    return false;
+  }
   static const node_string_part empty;
   bool in_bracket = 0;
   node_string_part cur;
@@ -762,6 +766,9 @@ split_node_string(node_string_list_t &list, char *str) {
         return false;
       }
     } else if (c == '[') {
+      if (disable_expansion) {
+        continue;
+      }
       *str = '\0';
       cur.prefix = std::string(seg_start);
       in_bracket = 1;
@@ -958,6 +965,10 @@ void *node_watcher_distributor(void *arg) {
     (const char *)run_once_env,
     NULL
   };
+  std::vector<std::pair<std::string /*acct*/, std::string /*qos*/>>
+    acct_qoses[2];
+  std::set<std::string> all_qos;
+  std::set<std::string> all_acct;
   // Todo: max jobs aware
   {
     const char *cur_user = getpwuid(geteuid())->pw_name;
@@ -979,14 +990,12 @@ void *node_watcher_distributor(void *arg) {
     while (
       const auto assoc = (slurmdb_assoc_rec_t *) slurm_list_next(list_it)) {
       ListIterator qos_list_it = slurm_list_iterator_create(assoc->qos_list);
-      std::string val(assoc->acct);
-      while (const auto part = (const char *) slurm_list_next(qos_list_it)) {
-        std::string key = qos_name[atoi(part/*ition*/)];
-        if (assoc->is_def/*ault*/) {
-          partition_account[key] = val;
-        } else {
-          partition_account.try_emplace(key, val);
-        }
+      std::string acct(assoc->acct);
+      all_acct.emplace(acct);
+      while (const auto qos = (const char *) slurm_list_next(qos_list_it)) {
+        std::string qos_str(qos_name[atoi(qos)]);
+        acct_qoses[assoc->is_def].push_back(std::make_pair(acct, qos_str));
+        all_qos.emplace(qos_str);
       }
     }
     slurm_list_iterator_destroy(list_it);
@@ -1034,12 +1043,53 @@ void *node_watcher_distributor(void *arg) {
         for (size_t i = 0; i < partition_msg->record_count; i++) {
           const auto &info = partition_msg->partition_array[i];
           const std::string name(info.name);
-          if (info.allow_accounts && !partition_account.count(name)) {
-            continue;
+          std::set<std::string> denied_qos;
+          std::set<std::string> denied_accounts;
+          const auto calc_deny = [](char *str,
+            std::set<std::string> &denied, std::set<std::string> full) {
+            if (!str) {
+              return;
+            }
+            node_string_list_t allowed;
+            split_node_string(allowed, str, true);
+            for (const auto &x : allowed) {
+              full.erase(x);
+            }
+            for (const auto &x : full) {
+              denied.insert(x);
+            }
+          };
+          const auto ins_deny = [](char *str, std::set<std::string> &denied) {
+            if (!str) {
+              return;
+            }
+            node_string_list_t deny;
+            split_node_string(deny, str, true);
+            for (const auto &x : denied) {
+              denied.insert(x);
+            }
+          };
+          calc_deny(info.allow_accounts, denied_accounts, all_acct);
+          calc_deny(info.allow_qos, denied_qos, all_qos);
+          ins_deny(info.deny_accounts, denied_accounts);
+          ins_deny(info.deny_qos, denied_qos);
+          std::string result = "";
+          for (int i = 1; i >= 0; i--) {
+            for (const auto &[acct, qos] : acct_qoses[i]) {
+              if ((denied_accounts.size() && denied_accounts.count(acct))
+                  || (denied_qos.size() && denied_qos.count(qos))) {
+                continue;
+              }
+              result = acct;
+              goto exit;
+            }
           }
+          continue;
+          exit:;
           usable_partition.orig = &info;
           usable_partitions.push_back(usable_partition);
           partition_info[name] = info;
+          partition_account[name] = result;
         }
         std::sort(usable_partitions.begin(), usable_partitions.end());
         for (const auto &partition : usable_partitions) {
@@ -1136,6 +1186,9 @@ void *node_watcher_distributor(void *arg) {
     );
     for (auto &[partition, task] : tasks) {
       int s1 = 0, s2 = task.size();
+      if (!partition_account.count(partition)) {
+        continue;
+      }
       DEBUGOUT(
         fprintf(stderr, "===== Partition %s =====\n", partition.c_str());
       )
