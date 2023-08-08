@@ -246,7 +246,7 @@ void sendout() {
     uint32_t len = strlen(app_addr) + 1;
     if (len > INIT_BUF_SIZE) {
       len = INIT_BUF_SIZE;
-      app_addr[len] = '\0';
+      app_addr[len - 1] = '\0';
     }
     do_send(&len, sizeof(len));
     do_send(app_addr, len);
