@@ -639,9 +639,13 @@ void scraper() {
       MERGECHILD(utime);
       MERGECHILD(stime);
       #undef MERGECHILD
-      apps.erase("slurmstepd");
-      apps.erase("slurm_script");
-      apps.erase("turingwatch");
+      const std::vector<std::string> ignored_apps {
+        "slurmstepd", "slurm_script", "srun",
+        "turingwatch"
+      };
+      for (const auto &x : ignored_apps) {
+        apps.erase(x);
+      }
       DEBUGOUT(
         fputs("===> ", stderr);
         bool first = 1;
