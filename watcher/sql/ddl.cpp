@@ -68,6 +68,34 @@ CREATE TABLE IF NOT EXISTS jobinfo(
 CREATE UNIQUE INDEX IF NOT EXISTS jobinfo_unique_null
   ON jobinfo (jobid) WHERE stepid IS NULL;
 
+CREATE TABLE IF NOT EXISTS gpu_measurements(
+  watcherid INTEGER NOT NULL REFERENCES watcher(id),
+  batch INTEGER NOT NULL CHECK(batch > 0),
+  jobid INTEGER NOT NULL REFERENCES jobinfo(jobid) ON DELETE RESTRICT,
+  stepid INTEGER NOT NULL,
+  pid INTEGER NOT NULL,
+  gpuid INTEGER NOT NULL,
+
+  temperature INTEGER,
+  sm_clock INTEGER CHECK (sm_clock > 0),
+  util INTEGER CHECK (util >= 0),
+  clock_limit_reason TEXT,
+  source TEXT NOT NULL,
+  PRIMARY KEY(batch, pid, gpuid)
+);
+
+CREATE TRIGGER IF NOT EXISTS gpu_measurements_del
+BEFORE DELETE ON gpu_measurements
+BEGIN
+  SELECT RAISE(ABORT, 'Deletion of GPU measurement record not supported');
+END;
+
+CREATE TRIGGER IF NOT EXISTS gpu_measurements_upd
+BEFORE UPDATE ON gpu_measurements
+BEGIN
+  SELECT RAISE(ABORT, 'Update of GPU measurement record not supported');
+END;
+
 CREATE TABLE IF NOT EXISTS measurements(
   recordid INTEGER PRIMARY KEY AUTOINCREMENT,
   watcherid INTEGER NOT NULL REFERENCES watcher(id) ON DELETE RESTRICT,
@@ -88,7 +116,9 @@ CREATE TABLE IF NOT EXISTS measurements(
   minor_pagefault INTEGER,
 
   /* GPU utilization data could be directly updated given the entry exists */
-  gpu_util INTEGER
+  gpu_measurement_batch INTEGER,
+  FOREIGN KEY (gpu_measurement_batch, jobid, stepid)
+    REFERENCES gpu_measurements(batch, jobid, stepid)
 );
 
 CREATE INDEX IF NOT EXISTS measurements_index ON measurements(tot_time);
@@ -128,9 +158,22 @@ BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS application_usage(
-  jobid INTEGER NOT NULL CHECK(jobid > 0),
+  jobid INTEGER NOT NULL REFERENCES jobinfo(jobid) ON DELETE RESTRICT,
   stepid INTEGER NOT NULL,
   application TEXT NOT NULL,
   PRIMARY KEY(jobid, stepid, application)
 ) WITHOUT ROWID;
+
+CREATE TABLE IF NOT EXISTS worker_task_info(
+  ensure_uniq INTEGER PRIMARY KEY NOT NULL CHECK(ensure_uniq IS 0) DEFAULT 0,
+  schema_version INTEGER DEFAULT 0,
+  gpu_measurement_batch_cnt INTEGER DEFAULT 0,
+  analysis_offset INTEGER DEFAULT 0,
+
+  prev_analysis_offset INTEGER DEFAULT 0,
+  prev_gpu_measurement_batch_cnt INTEGER DEFAULT 0
+) WITHOUT ROWID;
+
+/* Fetch and update range in one statement */
+INSERT OR IGNORE INTO worker_task_info DEFAULT VALUES;
 );

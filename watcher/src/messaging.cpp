@@ -3,6 +3,7 @@
 static std::queue<scrape_result_t> scrape_result_queue[2];
 static std::queue<application_usage_t> application_usage_queue[2];
 static std::queue<header_t> header_queue[2];
+static std::queue<gpu_measurement_t> gpu_result_queue[2];
 static char *buf;
 static size_t buf_size;
 static size_t buf_used;
@@ -81,6 +82,11 @@ static inline char *stage_str(const char *str) {
   return (char *)(dest - buf);
 }
 
+void stage_message(gpu_measurement_t result, int queue_id) {
+  bool cur_used = queue_id == -1 ? cur : queue_id;
+  gpu_result_queue[cur_used].push(result);
+}
+
 void stage_message(scrape_result_t result, int queue_id) {
   bool cur_used = queue_id == -1 ? cur : queue_id;
   scrape_result_queue[cur_used].push(result);
@@ -120,7 +126,12 @@ bool recombine_queue(result_group_t &result) {
     result.worker = header.worker;
     header_queue[cur].pop();
     for (uint32_t i = 0; i < header.result_cnt; i++) {
-      result.scrape_results.push(scrape_result_queue[cur].front());
+      const auto &front = scrape_result_queue[cur].front();
+      result.scrape_results.push(front);
+      for (uint32_t j = 0; j < front.gpu_measurement_cnt; j++) {
+        result.gpu_results.push(gpu_result_queue[cur].front());
+        gpu_result_queue[cur].pop();
+      }
       scrape_result_queue[cur].pop();
     }
     for (uint32_t i = 0; i < header.usage_cnt; i++) {
@@ -150,6 +161,7 @@ static inline void takein(int from) {
   auto cur_copy = cur;
   header_t header;
   scrape_result_t result;
+  gpu_measurement_t gpu_result;
   application_usage_t usage;
   uint32_t len;
   {
@@ -183,6 +195,10 @@ static inline void takein(int from) {
   for (uint32_t i = 0; i < header.result_cnt; i++) {
     do_recv(&result, sizeof(result));
     stage_message(result, cur_copy);
+    for (int j = 0; j < result.gpu_measurement_cnt; j++) {
+      do_recv(&gpu_result, sizeof(gpu_result));
+      stage_message(gpu_result, cur_copy);
+    }
   }
   for (uint32_t i = 0; i < header.usage_cnt; i++) {
     do_recv(&usage, sizeof(usage));
@@ -285,6 +301,11 @@ void sendout() {
   while (!scrape_result_queue[cur].empty()) {
     const auto &front = scrape_result_queue[cur].front();
     do_send(&front, sizeof(front));
+    for (int i = 0; i < front.gpu_measurement_cnt; i++) {
+      const auto &gpu_front = gpu_result_queue[cur].front();
+      do_send(&gpu_front, sizeof(gpu_front));
+      gpu_result_queue[cur].pop();
+    }
     scrape_result_queue[cur].pop();
   }
   while (!application_usage_queue[cur].empty()) {

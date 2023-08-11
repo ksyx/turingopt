@@ -3,6 +3,8 @@
 static sqlite3_stmt *measurement_insert;
 static sqlite3_stmt *jobinfo_insert;
 static sqlite3_stmt *application_usage_insert;
+static sqlite3_stmt *gpu_measurement_insert;
+static sqlite3_stmt *gpu_measurement_batch_renew;
 
 static void collect_msg_queue();
 
@@ -11,6 +13,8 @@ void worker_finalize() {
     measurement_insert,
     jobinfo_insert,
     application_usage_insert,
+    gpu_measurement_insert,
+    gpu_measurement_batch_renew,
     FINALIZE_END_ADDR
   };
   finalize_stmt_array(stmt_to_finalize);
@@ -141,8 +145,8 @@ measurement_record_insert(const measurement_rec_t &m) {
   if (m.minor_pagefault) {
     BIND(int64, ":minor_pagefault", *m.minor_pagefault);
   }
-  if (m.gpu_util) {
-    BIND(int, ":gpu_util", (int)(*m.gpu_util * GPU_UTIL_MULTIPLIER));
+  if (m.gpu_measurement_batch) {
+    BIND(int, ":gpu_measurement_batch", *m.gpu_measurement_batch);
   }
   #define BINDTIMING(VAR) \
     BIND(int64, ":" #VAR "_sec", *m.VAR##_cpu_sec); \
@@ -172,7 +176,7 @@ static inline void measurement_record_insert(slurmdb_step_rec_t *step) {
   m.dev_out = &tres_out[DISK_TRES];
   m.res_size = &tres_max[MEM_TRES];
   m.minor_pagefault = NULL;
-  m.gpu_util = NULL;
+  m.gpu_measurement_batch = NULL;
   #define BINDTIMING(FIELD) \
     m.FIELD##_cpu_sec = &step->FIELD##_cpu_sec; \
     m.FIELD##_cpu_usec = &step->FIELD##_cpu_usec;
@@ -188,7 +192,11 @@ static inline void measurement_record_insert(const scrape_result_t result) {
   m.step_id = &result.step;
   m.res_size = &result.res;
   m.minor_pagefault = &result.minor_pagefault;
-  m.gpu_util = NULL;
+  if (result.gpu_measurement_cnt) {
+    m.gpu_measurement_batch = &result.gpu_measurement_cnt;
+  } else {
+    m.gpu_measurement_batch = NULL;
+  }
   auto split_ticks = [](uint64_t *sec, uint32_t *usec, const size_t ticks) {
     // clk_tck ticks per second --> clk_tck/1e6 ticks per usec
     // [1e6/clk_tck usec per tick] * tick = usec
@@ -218,8 +226,77 @@ static inline void measurement_record_insert(const scrape_result_t result) {
   measurement_record_insert(m);
 }
 
+static inline int collect_gpu_measurement_queue(
+  const slurm_step_id_t step,
+  const uint32_t size,
+  std::queue<gpu_measurement_t> &queue) {
+  #define OPC "(gpu_measurement)"
+  if (!setup_stmt(gpu_measurement_batch_renew, UPDATE_GPU_BATCH_SQL, OPC)) {
+    return 0;
+  }
+  int trash, batch;
+  if (!step_renew(gpu_measurement_batch_renew, OPC, trash, batch)) {
+    return 0;
+  }
+  if (!IS_SQLITE_OK(sqlite3_reset(gpu_measurement_batch_renew))) {
+    SQLITE3_PERROR("reset" OPC);
+    return 0;
+  }
+  if (!setup_stmt(gpu_measurement_insert, GPU_MEASUREMENT_INSERT_SQL, OPC)) {
+    return 0;
+  }
+  SQLITE3_BIND_START;
+  #define BIND(VAR, VAL) NAMED_BIND_INT(gpu_measurement_insert, VAR, VAL);
+  BIND(":watcherid", watcher_id);
+  BIND(":batch", batch);
+  BIND(":jobid", step.job_id);
+  BIND(":stepid", step.step_id);
+  if (BIND_FAILED) {
+    return 0;
+  }
+  SQLITE3_BIND_END;
+  for (uint32_t i = 0; i < size; i++) {
+    const auto &front = queue.front();
+    std::string reason;
+    const char *source_str;
+    SQLITE3_BIND_START;
+    BIND(":pid", front.pid);
+    BIND(":gpuid", front.gpu_id);
+    BIND(":temperature", front.temp);
+    BIND(":sm_clock", front.sm_clock);
+    BIND(":util", front.util);
+    source_str =
+      gpu_measurement_source_str_table[(gpu_measurement_source_t) front.source];
+    if (!source_str) {
+      source_str = "unknown";
+    }
+    NAMED_BIND_TEXT(gpu_measurement_insert, ":source", source_str);
+    reason = gpu_clock_limit_reason_to_str(front.clock_limit_reason_mask);
+    NAMED_BIND_TEXT(gpu_measurement_insert, ":clock_limit_reason",
+      reason.c_str());
+    if (BIND_FAILED) {
+      continue;
+    }
+    SQLITE3_BIND_END;
+    fprintf(stderr,
+      "[watcher %d batch %d.%d step %d.%d] "
+      "gpu %d temp %d sm_clock %d util %d source %s clock_limit_reason %s\n",
+      watcher_id, batch, front.pid, step.job_id, step.step_id, front.gpu_id,
+      front.temp, front.sm_clock, front.util, source_str, reason.c_str());
+    if (sqlite3_step(gpu_measurement_insert) != SQLITE_DONE) {
+      SQLITE3_PERROR("step" OPC);
+    }
+    if (!IS_SQLITE_OK(sqlite3_reset(gpu_measurement_insert))) {
+      SQLITE3_PERROR("reset" OPC);
+    }
+    queue.pop();
+  }
+  return batch;
+  #undef BIND
+  #undef OPC
+}
+
 static void collect_msg_queue() {
-  #define OPC "(application_usage)"
   result_group_t result;
   while (recombine_queue(result)) {
     auto old_watcher_id = watcher_id;
@@ -233,9 +310,16 @@ static void collect_msg_queue() {
     renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID,
       &result.worker);
     while (!result.scrape_results.empty()) {
-      measurement_record_insert(result.scrape_results.front());
+      auto &front = result.scrape_results.front();
+      if (front.gpu_measurement_cnt) {
+        front.gpu_measurement_cnt
+          = collect_gpu_measurement_queue(
+            front.step, front.gpu_measurement_cnt, result.gpu_results);
+      }
+      measurement_record_insert(front);
       result.scrape_results.pop();
     }
+    #define OPC "(application_usage)"
     if (!setup_stmt(application_usage_insert,
                     APPLICATION_USAGE_INSERT_SQL,
                     OPC)) {
@@ -582,7 +666,9 @@ static void walk_scraped_proc_tree (
   pid_t cur,
   process_tree_t &tree,
   scraper_result_map_t &stats,
-  step_application_set_t &application_set) {
+  step_application_set_t &application_set,
+  pid_gpu_measurement_map_t &pid_gpu_measurement_map,
+  const slurm_step_id_t root_step_id) {
 
   #define ACCUMULATE_SELF_STAT(NAME) \
     STAT_MERGE_DST.c##NAME += STAT_MERGE_DST.NAME; \
@@ -595,18 +681,31 @@ static void walk_scraped_proc_tree (
   ACCUMULATE_SELF_STAT(utime);
   ACCUMULATE_SELF_STAT(stime);
   ACCUMULATE_SELF_STAT(minor_pagefault);
+  if (pid_gpu_measurement_map.count(cur)) {
+    const auto &vec = pid_gpu_measurement_map[cur];
+    STAT_MERGE_DST.gpu_measurement_cnt = vec.size();
+    fprintf(stderr, "visit %d\n", cur);
+    for (auto &measurement : vec) {
+      measurement->step = root_step_id;
+      fprintf(stderr, "-- %d\n", measurement->pid);
+      stage_message(*measurement);
+    }
+  }
   for (const auto &cpid : childs) {
     if (!cpid)
       continue;
     const auto &STAT_MERGE_SRC = stats[cpid];
     DEBUGOUT(STAT_MERGE_SRC.print();)
-    walk_scraped_proc_tree(cpid, tree, stats, application_set);
+    walk_scraped_proc_tree(
+      cpid, tree, stats, application_set,
+      pid_gpu_measurement_map, root_step_id);
     // ____ of child is already in c____ of parent, but not recursive
     ACCUMULATE_SCRAPER_STAT(rchar);
     ACCUMULATE_SCRAPER_STAT(wchar);
     ACCUMULATE_SCRAPER_STAT(cutime);
     ACCUMULATE_SCRAPER_STAT(cstime);
     ACCUMULATE_SCRAPER_STAT(cminor_pagefault);
+    ACCUMULATE_SCRAPER_STAT(gpu_measurement_cnt);
     AGGERGATE_SCRAPER_STAT_MAX(res);
   }
   #undef ACCUMULATE_LEAF_STAT
@@ -622,20 +721,28 @@ void scraper() {
   // somehow rolled rocket fast and *luckily* the next slurmstepd got this pid
   // again. With this luck it is suggested that you buy a lottery and share me 5
   // million if u got a jackpot :)
-  std::map<pid_t /*slurmstepd_pid*/, step_application_set_t> app_map;
+  std::map<pid_t/* slurmstepd_pid */, step_application_set_t> app_map;
   while (scrape_cnt-- && wait_until(timeout)) {
     timeout = time(NULL) + SCRAPE_INTERVAL;
     process_tree_t child;
     scraper_result_map_t result;
     stepd_step_id_map_t stepd_pids;
+    pid_gpu_measurement_map_t pid_gpu_measurement_map;
     fetch_proc_stats(child, result, stepd_pids);
+    measure_gpu_result_t gpu_result;
+    measure_gpu(gpu_result);
+    for (auto &result : gpu_result) {
+      pid_gpu_measurement_map[result.pid].push_back(&result);
+      fprintf(stderr, "pid=%d gpu=%d\n", result.pid, result.gpu_id);
+    }
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
       const auto &watching_job_id = worker.jobstep_info.job_id;
       if (watching_job_id && stepd_step_id.job_id != watching_job_id) {
         continue;
       }
       step_application_set_t &apps = app_map[stepd_pid];
-      walk_scraped_proc_tree(stepd_pid, child, result, apps);
+      walk_scraped_proc_tree(
+        stepd_pid, child, result, apps, pid_gpu_measurement_map, stepd_step_id);
       auto &final_result = result[stepd_pid];
       #define MERGECHILD(FIELD) \
         final_result.FIELD += final_result.c##FIELD; \

@@ -4,6 +4,7 @@
 #include "sqlite_helper.h"
 #include "db_common.h"
 #include "messaging.h"
+#include "gpu/interface.h"
 
 // ========================== FOR DEBUG AND TEST ONLY ==========================
 // THIS OPTION BRINGS KNOWN PROBLEM OF POSSIBLY MISSING MATCHING JOBINFO!!!
@@ -47,11 +48,6 @@ constexpr int SCRAPE_CNT = TOTAL_SCRAPE_TIME_PER_NODE / SCRAPE_INTERVAL;
 constexpr int SCRAPE_CONCURRENT_NODES = 4;
 constexpr int ALLOCATION_TIMEOUT = 120;
 
-// A multiplier of 1eT converts a gpu_util of [0, 1] to first T digits following
-// the decimal
-#define GPU_UTIL_MULTIPLIER 1e4
-typedef double gpu_util_t;
-
 #define READ_BUF_SIZE 4096
 
 // No check for existence of mandatory arguments
@@ -61,7 +57,7 @@ struct measurement_rec_t {
   const size_t *dev_out;
   const size_t *res_size;
   const size_t *minor_pagefault; /* Optional */
-  const gpu_util_t *gpu_util; /* Optional */
+  const pid_t *gpu_measurement_batch;
 
   const uint64_t *sys_cpu_sec;
   const uint32_t *sys_cpu_usec;
@@ -91,6 +87,8 @@ typedef std::map<std::string, node_val_t> node_usage_map_t;
 typedef
 std::vector<std::pair<node_val_t /*value_taken*/, uint8_t /*str_len*/>>
 val_assignment_t;
+typedef std::map<pid_t, std::vector<gpu_measurement_t *> >
+  pid_gpu_measurement_map_t;
 
 #define STAT_MERGE_DST my_stat
 #define STAT_MERGE_SRC child_stat

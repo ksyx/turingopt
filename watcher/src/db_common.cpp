@@ -20,6 +20,44 @@ void db_common_finalize() {
   finalize_stmt_array(stmt_to_finalize);
 }
 
+bool step_and_verify(sqlite3_stmt *stmt, bool expect_rows, const char *op) {
+  int ret = sqlite3_step(stmt);
+  const char *msg = NULL;
+  if (expect_rows) {
+    if (ret == SQLITE_ROW) {
+      return true;
+    } else if (ret == SQLITE_DONE) {
+      msg = "no result returned";
+    }
+  } else {
+    if (ret == SQLITE_DONE) {
+      return true;
+    }
+  }
+  fprintf(stderr, "sqlite3_step%s: %s\n",
+          op, msg ? msg : sqlite3_errmsg(SQL_CONN_NAME));
+  return false;
+}
+
+bool step_renew(sqlite3_stmt *stmt, const char *op, int &start, int &end) {
+  if (!step_and_verify(stmt, true, op)) {
+    return false;
+  }
+  SQLITE3_FETCH_COLUMNS_START("start", "end");
+  SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
+    if (!IS_EXPECTED_COLUMN) {
+      PRINT_COLUMN_MISMATCH_MSG(OP);
+      return false;
+    }
+    switch(i) {
+      case 0: start = SQLITE3_FETCH(int); break;
+      case 1: end = SQLITE3_FETCH(int); break;
+      default: fprintf(stderr, "%s: ", op); PRINT_UNEXPECTED_COLUMN_MSG("");
+    }
+  SQLITE3_FETCH_COLUMNS_END;
+  return true;
+}
+
 bool renew_watcher(const char *query, worker_info_t *worker) {
   #define OP "(renew_watcher)"
   sqlite3_stmt *insert_watcher = NULL;
@@ -39,32 +77,21 @@ bool renew_watcher(const char *query, worker_info_t *worker) {
     return false;
   }
   SQLITE3_BIND_END;
-  int ret;
-  if ((ret = sqlite3_step(insert_watcher)) != SQLITE_ROW) {
-    if (IS_SLURM_SUCCESS(ret)) {
-      fputs("sqlite3_step" OP ": no result returned\n", stderr);
-    } else {
-      SQLITE3_PERROR("step" OP);
-    }
+  if (!step_and_verify(insert_watcher, true, OP)) {
     return false;
   }
   SQLITE3_FETCH_COLUMNS_START("start", "end", "id");
-  SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, insert_watcher) {
-    if (!IS_EXPECTED_COLUMN(insert_watcher, i)) {
-      fprintf(stderr, "fetch_result_column" OP ": expected %s, got %s\n",
-                EXPECTED_COLUMN_NAMES_VAR[i],
-                GET_COLUMN_NAME(insert_watcher, i));
+  SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, insert_watcher)
+    if (!IS_EXPECTED_COLUMN) {
+      PRINT_COLUMN_MISMATCH_MSG(OP);
       return false;
     }
     switch(i) {
-      case 0: time_range_start = SQLITE3_FETCH(int, insert_watcher, i); break;
-      case 1: time_range_end = SQLITE3_FETCH(int, insert_watcher, i); break;
-      case 2: watcher_id = SQLITE3_FETCH(int64, insert_watcher, i); break;
-      default:
-        fprintf(stderr,
-                "fetch_result_column" OP ": unexpected column index %d\n", i);
+      case 0: time_range_start = SQLITE3_FETCH(int); break;
+      case 1: time_range_end = SQLITE3_FETCH(int); break;
+      case 2: watcher_id = SQLITE3_FETCH(int64); break;
+      default: PRINT_UNEXPECTED_COLUMN_MSG(OP);
     }
-  }
   SQLITE3_FETCH_COLUMNS_END;
   DEBUGOUT(
     fprintf(stderr,

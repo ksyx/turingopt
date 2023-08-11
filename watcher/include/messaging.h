@@ -2,6 +2,7 @@
 #define _TURINGWATCHER_MESSAGING_H
 #include "common.h"
 #include "sql.h"
+#include "gpu/interface.h"
 
 #include <atomic>
 
@@ -84,6 +85,9 @@ struct scrape_result_t {
   size_t rchar;
   size_t wchar;
 
+  // Would not exceed number of pids
+  pid_t gpu_measurement_cnt;
+
   void print(bool report_child = 1) const {
     fprintf(stderr, "%s pid=%d res=%ld minor=%ld",
       comm, pid, res, minor_pagefault);
@@ -108,9 +112,11 @@ struct result_group_t {
   char **buf;
   std::queue<scrape_result_t> scrape_results;
   std::queue<application_usage_t> usages;
+  std::queue<gpu_measurement_t> gpu_results;
 };
 
 void build_socket();
+void stage_message(gpu_measurement_t result, int queue_id = -1);
 void stage_message(scrape_result_t result, int queue_id = -1);
 void stage_message(application_usage_t usage, int queue_id = -1);
 void freeze_queue();

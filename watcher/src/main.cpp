@@ -97,6 +97,34 @@ static inline void build_sqlite_conn() {
   }
   sqlite3_free(sqlite_err);
 
+  sqlite3_stmt *stmt;
+  #define OP "(get_schema_version)"
+  if (!IS_SQLITE_OK(PREPARE_STMT(GET_SCHEMA_VERSION_SQL, &stmt, 0))) {
+    exit(1);
+  }
+  if (!step_and_verify(stmt, true, OP)) {
+    exit(1);
+  }
+  SQLITE3_FETCH_COLUMNS_START("schema_version");
+  int schema_version = 0;
+  SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
+    if (!IS_EXPECTED_COLUMN) {
+      PRINT_COLUMN_MISMATCH_MSG(OP);
+      exit(1);
+    }
+
+    switch(i) {
+      case 0: schema_version = SQLITE3_FETCH(int); break;
+      default: PRINT_UNEXPECTED_COLUMN_MSG(OP);
+    }
+  SQLITE3_FETCH_COLUMNS_END;
+
+  if (!IS_SQLITE_OK(sqlite3_finalize(stmt))) {
+    SQLITE3_PERROR("finalize" OP);
+    exit(1);
+  }
+  #undef OP
+
   // Register watcher
   sqlite3_begin_transaction();
   if (!renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID)) {
@@ -130,7 +158,11 @@ static void finalize(void) {
   close(sock);
   worker_finalize();
   db_common_finalize();
-  close_slurmdb_conn();
+  if (is_scraper || is_parent) {
+    finalize_gpu_measurement();
+  } else {
+    close_slurmdb_conn();
+  }
   if (SQL_CONN_NAME && !IS_SQLITE_OK(sqlite3_close(SQL_CONN_NAME))) {
     SQLITE3_PERROR("close");
   }
@@ -225,8 +257,10 @@ static inline bool initialize(int argc, char *argv[]) {
         return false;
       }
     }
-  }
-  if (is_scraper || is_parent) {
+  } else {
+    if (!init_gpu_measurement()) {
+      return false;
+    }
     worker.hostname = (char *)malloc(HOST_NAME_MAX);
     if (gethostname(worker.hostname, HOST_NAME_MAX)) {
       perror("gethostname");

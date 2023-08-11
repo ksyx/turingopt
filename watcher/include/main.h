@@ -3,6 +3,7 @@
 #include "common.h"
 
 #include "worker_interface.h"
+#include "gpu/interface.h"
 #include "db_common.h"
 #include "messaging.h"
 
