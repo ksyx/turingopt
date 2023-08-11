@@ -181,7 +181,7 @@ static inline bool initialize(int argc, char *argv[]) {
     exit(1);
   }
   worker.pid = getpid();
-  if (!is_scraper) {
+  if (!is_scraper && !is_parent) {
     slurm_init(NULL);
     if (!build_slurmdb_conn()) {
       return false;

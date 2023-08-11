@@ -228,6 +228,7 @@ static void collect_msg_queue() {
       watcher_id = old_watcher_id;
     };
     result.worker.hostname += (size_t) *result.buf;
+    DEBUGOUT(fprintf(stderr, "Source: %s\n", result.worker.hostname);)
     sqlite3_begin_transaction();
     renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID,
       &result.worker);
@@ -244,6 +245,10 @@ static void collect_msg_queue() {
     while (!result.usages.empty()) {
       const auto &front = result.usages.front();
       std::string app(front.app + (size_t) *result.buf);
+      DEBUGOUT(
+        fprintf(stderr, "jobid = %d stepid = %d app = %s\n",
+          front.step.job_id, front.step.step_id, app.c_str());
+      )
       SQLITE3_BIND_START;
       NAMED_BIND_INT(application_usage_insert, ":jobid", front.step.job_id);
       NAMED_BIND_INT(application_usage_insert, ":stepid", front.step.step_id);
@@ -256,16 +261,16 @@ static void collect_msg_queue() {
       SQLITE3_BIND_END;
       if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
         SQLITE3_PERROR("step" OPC);
-        continue;
+        // do not `continue` here. let reset do its job
       }
       if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
         SQLITE3_PERROR("reset" OPC);
-        break;
+        continue;
       }
     }
     finalize();
   }
-  #undef OP
+  #undef OPC
 }
 
 static inline bool wait_until(time_t timeout) {

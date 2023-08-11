@@ -24,12 +24,12 @@
 #define FREQ(HOUR, MINUTE, SECOND) HOUR * 60 * 60 + MINUTE * 60 + SECOND
 // The data is always there so just ensure new findings are alerted at a
 // reasonable frequency
-#define PRODUCTION_FREQ 0
+#define PRODUCTION_FREQ 1
 constexpr int ACCOUNTING_RPC_INTERVAL = FREQ(
 #if PRODUCTION_FREQ
 1, 0, 0
 #else
-0, 5, 0
+0, 2, 30
 #endif
 );
 
@@ -78,7 +78,7 @@ typedef std::set<std::string> node_set_t;
 typedef std::vector<std::string> node_string_list_t;
 
 struct node_string_part {
-  struct range_t{
+  struct range_t {
     std::pair<node_val_t /*start*/, node_val_t /*end*/> range;
     int length;
   };

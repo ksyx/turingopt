@@ -22,10 +22,17 @@ constexpr protocol_version_t protocol_version = 1;
 
   ======================== PROTOCOL VERSION 1    BEGIN =========================
 
+  CLIENT_MAGIC  = 0xAC1DBEEF
+  SERVER_MAGIC  = 0xEAC1CAFE
+  CONFIRM_MAGIC = 0x9A11SED9
+
+  ... After exchanging and verifing magic values in uint32_t type ...
   [header_t][hostname_str][scrape_result_t] ... continues next line ...
                           ~~ *result_cnt ~~
   ... continues here ... [application_usage_t(1)][uint32_t app_len(2)][app]
                          ~~~~~~~~~~~~~~~~~   *usage_cnt   ~~~~~~~~~~~~~~~~~
+
+ ... Server sends CONFIRM_MAGIC ...
 
   (1) the pointer const char *app should be ignored and overwritten to the
       first byte immediately following the structure.
@@ -43,6 +50,11 @@ constexpr protocol_version_t protocol_version = 1;
 #define SOCK_FAMILY PF_INET
 #define SOCK_TYPE SOCK_STREAM
 #define SOCK_PROTOCOL IPPROTO_TCP
+
+typedef uint32_t turing_watch_comm_magic_t;
+const turing_watch_comm_magic_t client_magic = 0xAC1DBEEF;
+const turing_watch_comm_magic_t server_magic = 0xEAC1CAFE;
+const turing_watch_comm_magic_t confirmation_magic = 0x9A115ED9; // 9 ALLSET 9
 
 struct header_t {
   const protocol_version_t protocol_ver = protocol_version;

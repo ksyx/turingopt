@@ -40,6 +40,10 @@ void build_socket() {
       fputs("error: no port specified for database host\n", stderr);
       exit(1);
     }
+    linger linger_opt;
+    linger_opt.l_onoff = true;
+    linger_opt.l_linger = 60;
+    setsockopt(sock, SOL_SOCKET, SO_LINGER, &linger_opt, sizeof(linger_opt));
   }
 }
 
@@ -136,20 +140,44 @@ bool recombine_queue(result_group_t &result) {
 static inline void takein(int from) {
   auto do_recv = [from](void *buf, size_t len) {
     size_t ret;
-    if ((ret = recv(from, buf, len, 0)) < 0) {
+    if ((ret = recv(from, buf, len, MSG_WAITALL)) < 0) {
       perror("recv");
     }
+  };
+  auto finalize = [&]() {
+    close(from);
   };
   auto cur_copy = cur;
   header_t header;
   scrape_result_t result;
   application_usage_t usage;
   uint32_t len;
+  {
+    size_t expected_size = sizeof(server_magic);
+    if (send(from, &server_magic, expected_size, 0) != expected_size) {
+      perror("send");
+      finalize();
+      return;
+    }
+  }
+  turing_watch_comm_magic_t magic_in;
+  do_recv(&magic_in, sizeof(client_magic));
+  if (magic_in != client_magic) {
+    finalize();
+    return;
+  }
   char buf[INIT_BUF_SIZE];
   do_recv(&header, sizeof(header));
+  DEBUGOUT(
+    fprintf(stderr, "recv: %d %d\n", header.result_cnt, header.usage_cnt);
+  )
   if (header.hostname_len) {
     do_recv(buf, header.hostname_len);
     header.worker.hostname = stage_str(buf);
+    DEBUGOUT(
+      fprintf(stderr, "recv: %s[buf = %s] | %d\n",
+        (size_t)header.worker.hostname + ::buf, buf, header.hostname_len);
+    )
   }
   header_queue[cur_copy].push(header);
   for (uint32_t i = 0; i < header.result_cnt; i++) {
@@ -160,10 +188,14 @@ static inline void takein(int from) {
     do_recv(&usage, sizeof(usage));
     do_recv(&len, sizeof(len));
     do_recv(buf, len);
+    DEBUGOUT(
+      fprintf(stderr, "recv: %d %d %s\n",
+        usage.step.job_id, usage.step.step_id, buf);
+    )
     usage.app = buf;
     stage_message(usage, cur_copy);
   }
-  close(from);
+  finalize();
 }
 
 void *conn_mgr(void *arg) {
@@ -214,12 +246,24 @@ void sendout() {
   header_t header;
   header.result_cnt = scrape_result_queue[cur].size();
   header.usage_cnt = application_usage_queue[cur].size();
+  DEBUGOUT(
+    fprintf(stderr, "send: %d %d %s\n",
+      header.result_cnt, header.usage_cnt, header.worker.hostname);
+  )
   header.worker = worker;
   if (const auto &hostname = header.worker.hostname) {
     header.hostname_len = strlen(hostname) + 1;
   }
-  // * 3: structure, len, string
-  size_t tot = header.usage_cnt * 3 + header.result_cnt;
+  turing_watch_comm_magic_t magic_in;
+  if ((recv(sock, &magic_in, sizeof(server_magic), MSG_WAITALL)) < 0) {
+    perror("recv");
+    return;
+  }
+  if (magic_in != server_magic) {
+    fputs("error: the server sent mismatching magic\n", stderr);
+    return;
+  }
+  size_t tot = 1;
   auto do_send = [&](const void *buf, size_t len) {
     int ret;
     if ((ret = send(sock, buf, len, --tot == 0 ? 0 : MSG_MORE)) != len) {
@@ -230,9 +274,13 @@ void sendout() {
       }
     }
   };
+  do_send(&client_magic, sizeof(client_magic));
+  // * 3: structure, len, string
+  tot = header.usage_cnt * 3 + header.result_cnt;
   do_send(&header, sizeof(header));
   if (header.hostname_len) {
     do_send(header.worker.hostname, header.hostname_len);
+    DEBUGOUT(fprintf(stderr, "send: %s\n", header.worker.hostname);)
   }
   while (!scrape_result_queue[cur].empty()) {
     const auto &front = scrape_result_queue[cur].front();
@@ -248,6 +296,11 @@ void sendout() {
       len = INIT_BUF_SIZE;
       app_addr[len - 1] = '\0';
     }
+    DEBUGOUT(
+      fprintf(stderr, "send: %d %d %s [%s]\n",
+        front.step.job_id, front.step.step_id, app_addr,
+        header.worker.hostname);
+    )
     do_send(&len, sizeof(len));
     do_send(app_addr, len);
     application_usage_queue[cur].pop();
