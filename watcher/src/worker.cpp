@@ -684,10 +684,8 @@ static void walk_scraped_proc_tree (
   if (pid_gpu_measurement_map.count(cur)) {
     const auto &vec = pid_gpu_measurement_map[cur];
     STAT_MERGE_DST.gpu_measurement_cnt = vec.size();
-    fprintf(stderr, "visit %d\n", cur);
     for (auto &measurement : vec) {
       measurement->step = root_step_id;
-      fprintf(stderr, "-- %d\n", measurement->pid);
       stage_message(*measurement);
     }
   }
@@ -733,7 +731,6 @@ void scraper() {
     measure_gpu(gpu_result);
     for (auto &result : gpu_result) {
       pid_gpu_measurement_map[result.pid].push_back(&result);
-      fprintf(stderr, "pid=%d gpu=%d\n", result.pid, result.gpu_id);
     }
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
       const auto &watching_job_id = worker.jobstep_info.job_id;
