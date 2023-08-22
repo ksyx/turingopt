@@ -1,6 +1,7 @@
 #include "gpu/interface.h"
 
 const gpu_measurement_source_t gpu_measurement_source = GPU_SOURCE_NONE;
+const bool gpu_provider_job_mapped = false;
 
 bool init_gpu_measurement() {
   return true;

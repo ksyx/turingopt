@@ -1,6 +1,8 @@
 #include "gpu/provider_nvml.h"
 
 const gpu_measurement_source_t gpu_measurement_source = GPU_SOURCE_NVML;
+const bool gpu_provider_job_mapped = false;
+
 static bool initialized;
 
 bool init_gpu_measurement() {
@@ -18,6 +20,7 @@ void measure_gpu(measure_gpu_result_t &results) {
     return;
   }
   gpu_measurement_t record;
+  record.age = 0;
   unsigned int device_cnt;
   nvmlReturn_t ret_err = NVML_SUCCESS;
   unsigned int ret_int;
@@ -69,6 +72,11 @@ void measure_gpu(measure_gpu_result_t &results) {
       continue;
     }
     record.sm_clock = ret_int;
+    if (!IS_NVML_SUCCESS(ret_err = nvmlDeviceGetPowerUsage(device, &ret_int))) {
+      NVML_PERROR(ret_err, "DeviceGetPowerUsage");
+      continue;
+    }
+    record.power_usage = ret_int;
     {
       struct reason_mapping_t {
         unsigned long long nvml_val;

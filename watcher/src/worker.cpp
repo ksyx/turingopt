@@ -250,7 +250,11 @@ static inline int collect_gpu_measurement_queue(
   BIND(":watcherid", watcher_id);
   BIND(":batch", batch);
   BIND(":jobid", step.job_id);
-  BIND(":stepid", step.step_id);
+  if (step.step_id) {
+    BIND(":stepid", step.step_id);
+  } else {
+    BIND_NULL(gpu_measurement_insert, ":stepid");
+  }
   if (BIND_FAILED) {
     return 0;
   }
@@ -260,10 +264,12 @@ static inline int collect_gpu_measurement_queue(
     std::string reason;
     const char *source_str;
     SQLITE3_BIND_START;
+    BIND(":age", front.age);
     BIND(":pid", front.pid);
     BIND(":gpuid", front.gpu_id);
     BIND(":temperature", front.temp);
     BIND(":sm_clock", front.sm_clock);
+    BIND(":power_usage", front.power_usage);
     BIND(":util", front.util);
     source_str =
       gpu_measurement_source_str_table[(gpu_measurement_source_t) front.source];
@@ -278,11 +284,15 @@ static inline int collect_gpu_measurement_queue(
       continue;
     }
     SQLITE3_BIND_END;
+    DEBUGOUT(
     fprintf(stderr,
       "[watcher %d batch %d.%d step %d.%d] "
-      "gpu %d temp %d sm_clock %d util %d source %s clock_limit_reason %s\n",
+      "gpu %d temp %d sm_clock %d util %d power_usage %d "
+      "source %s clock_limit_reason %s\n",
       watcher_id, batch, front.pid, step.job_id, step.step_id, front.gpu_id,
-      front.temp, front.sm_clock, front.util, source_str, reason.c_str());
+      front.temp, front.sm_clock, front.util, front.power_usage,
+      source_str, reason.c_str());
+    )
     if (sqlite3_step(gpu_measurement_insert) != SQLITE_DONE) {
       SQLITE3_PERROR("step" OPC);
     }
@@ -728,9 +738,16 @@ void scraper() {
     pid_gpu_measurement_map_t pid_gpu_measurement_map;
     fetch_proc_stats(child, result, stepd_pids);
     measure_gpu_result_t gpu_result;
+    std::map<uint32_t, std::vector<gpu_measurement_t *> > mapped_gpu_results;
+    std::map<uint32_t, uint32_t> job_step_mapping;
+    std::queue<gpu_measurement_t *> gpu_results_to_send;
     measure_gpu(gpu_result);
     for (auto &result : gpu_result) {
-      pid_gpu_measurement_map[result.pid].push_back(&result);
+      if (result.step.job_id) {
+        mapped_gpu_results[result.step.job_id].push_back(&result);
+      } else {
+        pid_gpu_measurement_map[result.pid].push_back(&result);
+      }
     }
     for (const auto &[stepd_pid, stepd_step_id] : stepd_pids) {
       const auto &watching_job_id = worker.jobstep_info.job_id;
@@ -767,7 +784,28 @@ void scraper() {
         final_result.print(0);
         fputs("\n", stderr);
       )
+      if (gpu_provider_job_mapped
+          && mapped_gpu_results.count(stepd_step_id.job_id)) {
+        const uint32_t jobid = stepd_step_id.job_id;
+        const uint32_t stepid = stepd_step_id.step_id;
+        if (!job_step_mapping.count(stepd_step_id.job_id)) {
+          job_step_mapping[jobid] = stepid;
+          auto &gpu_results_vec = mapped_gpu_results[jobid];
+          final_result.gpu_measurement_cnt += gpu_results_vec.size();
+          for (auto &measurement_ptr : gpu_results_vec) {
+            gpu_results_to_send.push(measurement_ptr);
+          }
+        } else {
+          job_step_mapping[jobid] = 0;
+        }
+      }
       stats.push_back(std::make_pair(stepd_step_id, final_result));
+    }
+    while (!gpu_results_to_send.empty()) {
+      auto &measurement = *gpu_results_to_send.front();
+      measurement.step.step_id = job_step_mapping[measurement.step.job_id];
+      stage_message(measurement);
+      gpu_results_to_send.pop();
     }
   }
   application_usage_t usage;
@@ -1070,8 +1108,16 @@ void *node_watcher_distributor(void *arg) {
   };
   const std::string db_host = get_env_str(DB_HOST_ENV, hostname);
   const std::string port_env = get_env_str(PORT_ENV, STRINGIFY(DEFAULT_PORT));
+  const std::string bright_cert_path_env
+    = get_env_str(BRIGHT_CERT_PATH_ENV, "default");
+  const std::string bright_key_path_env
+    = get_env_str(BRIGHT_KEY_PATH_ENV, "default");
 
   const std::string run_once_env = get_env_no_default(RUN_ONCE_ENV, "AAA");
+  const std::string bright_url_base_env
+    = get_env_no_default(BRIGHT_URL_BASE_ENV, "BBB");
+  const std::string no_check_ssl_cert_env
+    = get_env_no_default(NO_CHECK_SSL_CERT_ENV, "CCC");
   static const char *env[] = {
     IS_SCRAPER_ENV "=1",
     dbenv.c_str(),
@@ -1080,6 +1126,11 @@ void *node_watcher_distributor(void *arg) {
     db_host.c_str(),
     port_env.c_str(),
     run_once_env.c_str(),
+
+    bright_url_base_env.c_str(),
+    bright_cert_path_env.c_str(),
+    bright_key_path_env.c_str(),
+    no_check_ssl_cert_env.c_str(),
     NULL
   };
   std::vector<std::pair<std::string /*acct*/, std::string /*qos*/>>

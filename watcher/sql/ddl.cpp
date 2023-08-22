@@ -72,10 +72,12 @@ CREATE TABLE IF NOT EXISTS gpu_measurements(
   watcherid INTEGER NOT NULL REFERENCES watcher(id),
   batch INTEGER NOT NULL CHECK(batch > 0),
   jobid INTEGER NOT NULL REFERENCES jobinfo(jobid) ON DELETE RESTRICT,
-  stepid INTEGER NOT NULL,
+  stepid INTEGER,
   pid INTEGER NOT NULL,
   gpuid INTEGER NOT NULL,
+  age INTEGER,
 
+  power_usage INTEGER,
   temperature INTEGER,
   sm_clock INTEGER CHECK (sm_clock > 0),
   util INTEGER CHECK (util >= 0),

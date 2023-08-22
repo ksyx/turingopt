@@ -57,11 +57,11 @@ const char *APPLICATION_USAGE_INSERT_SQL = SQLITE_CODEBLOCK(
 
 const char *GPU_MEASUREMENT_INSERT_SQL = SQLITE_CODEBLOCK(
   INSERT INTO gpu_measurements(
-    watcherid, batch, pid, jobid, stepid, gpuid,
-    temperature, sm_clock, util, clock_limit_reason, source
+    watcherid, batch, pid, jobid, stepid, gpuid, age,
+    power_usage, temperature, sm_clock, util, clock_limit_reason, source
   ) VALUES (
-    :watcherid, :batch, :pid, :jobid, :stepid, :gpuid,
-    :temperature, :sm_clock, :util, :clock_limit_reason, :source
+    :watcherid, :batch, :pid, :jobid, :stepid, :gpuid, :age,
+    :power_usage, :temperature, :sm_clock, :util, :clock_limit_reason, :source
   )
 );
 

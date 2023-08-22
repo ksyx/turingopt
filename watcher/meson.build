@@ -1,9 +1,14 @@
 require_nvml = false
+require_libcurl = false
+require_json_support = false
 
 gpu_src = ['src/gpu/' + gpu_measurement_source + '.cpp']
 # Update comment in root meson.build when there is new measurement source
 if gpu_measurement_source == 'nvml'
   require_nvml = true
+elif gpu_measurement_source == 'bright'
+  require_libcurl = true
+  require_json_support = true
 elif gpu_measurement_source == 'none'
   # so it wont abort
 else
@@ -11,6 +16,8 @@ else
 endif
 
 nvml = dependency('nvml', required: require_nvml)
+libcurl = dependency('libcurl', required: require_libcurl)
+json_support = dependency('nlohmann_json', required: require_json_support)
 
 src = files([
   'src/main.cpp',
@@ -31,5 +38,5 @@ incdir = [
 ]
 
 executable('turingwatch', src, include_directories: incdir,
-           dependencies: [slurm, sqlite, nvml],
+           dependencies: [slurm, sqlite, nvml,libcurl, json_support],
            link_args: ['-flto', '-lpthread', '-ldl'])

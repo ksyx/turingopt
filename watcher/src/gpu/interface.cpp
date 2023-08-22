@@ -17,6 +17,7 @@ std::map<gpu_measurement_source_t, const char *>
 gpu_measurement_source_str_table = {
   { GPU_SOURCE_NONE, "none" },
   { GPU_SOURCE_NVML, "nvml" },
+  { GPU_SOURCE_BRIGHT, "bright" },
 };
 
 uint32_t gpu_clock_limit_reason_to_mask(const char *str) {

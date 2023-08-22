@@ -258,12 +258,12 @@ static inline bool initialize(int argc, char *argv[]) {
       }
     }
   } else {
-    if (!init_gpu_measurement()) {
-      return false;
-    }
     worker.hostname = (char *)malloc(HOST_NAME_MAX);
     if (gethostname(worker.hostname, HOST_NAME_MAX)) {
       perror("gethostname");
+      return false;
+    }
+    if (!init_gpu_measurement()) {
       return false;
     }
   }

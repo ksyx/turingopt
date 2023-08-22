@@ -16,6 +16,7 @@ enum gpu_clock_limit_reason_t {
 enum gpu_measurement_source_t {
   GPU_SOURCE_NONE = 0,
   GPU_SOURCE_NVML = 1,
+  GPU_SOURCE_BRIGHT = 2,
 };
 
 struct gpu_clock_limit_reason_mapping_t {
@@ -27,16 +28,20 @@ typedef
 std::vector<gpu_clock_limit_reason_mapping_t> gpu_clock_limit_reason_table_t;
 
 extern const gpu_clock_limit_reason_table_t gpu_clock_limit_reason_table;
-extern const gpu_measurement_source_t gpu_measurement_source;
 extern std::map<gpu_measurement_source_t, const char *>
   gpu_measurement_source_str_table;
+
+extern const gpu_measurement_source_t gpu_measurement_source;
+extern const bool gpu_provider_job_mapped;
 
 struct gpu_measurement_t {
   uint32_t gpu_id;
   pid_t pid;
+  uint32_t age;
   uint32_t temp;
   uint32_t sm_clock; // MHz
   uint32_t util;
+  uint32_t power_usage; // Watt * 100
   uint32_t clock_limit_reason_mask;
 
   slurm_step_id_t step;
@@ -48,6 +53,7 @@ typedef std::vector<gpu_measurement_t> measure_gpu_result_t;
 
 uint32_t gpu_clock_limit_reason_to_mask(const char *str);
 std::string gpu_clock_limit_reason_to_str(uint32_t mask);
+
 void measure_gpu(measure_gpu_result_t &results);
 bool init_gpu_measurement();
 void finalize_gpu_measurement();
