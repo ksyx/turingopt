@@ -1053,21 +1053,25 @@ void *node_watcher_distributor(void *arg) {
     std::string("LD_LIBRARY_PATH=") + std::string(getenv("LD_LIBRARY_PATH"));
   const std::string conf_path_env =
     std::string("SLURM_CONF=") + slurm_conf_path;
-  const char *port_env_orig = getenv(PORT_ENV);
-  const char *db_host_env_orig = getenv(DB_HOST_ENV);
   char hostname[HOST_NAME_MAX];
-  if (!db_host_env_orig) {
+  if (!getenv(DB_HOST_ENV)) {
     gethostname(hostname, HOST_NAME_MAX);
   }
-  const char *_run_once = getenv(RUN_ONCE_ENV);
-  const char *run_once_env = _run_once ? _run_once : "AAA=1";
-  const std::string db_host =
-    std::string(DB_HOST_ENV "=")
-    + std::string(db_host_env_orig ? db_host_env_orig : hostname);
-  const std::string port_env =
-    std::string(PORT_ENV "=")
-    + (port_env_orig ? std::string(port_env_orig)
-                      : std::to_string(DEFAULT_PORT));
+  const auto get_env_no_default =
+    [](const char *env_name, const char *alt_var) {
+      const char *orig = getenv(env_name);
+      return std::string(orig ? env_name : alt_var) + std::string("=")
+             + std::string(orig ? orig : "1");
+    };
+  const auto get_env_str = [](const char *env_name, const char *default_val) {
+    const char *orig = getenv(env_name);
+    return std::string(env_name) + std::string("=")
+           + std::string(orig ? orig : default_val);
+  };
+  const std::string db_host = get_env_str(DB_HOST_ENV, hostname);
+  const std::string port_env = get_env_str(PORT_ENV, STRINGIFY(DEFAULT_PORT));
+
+  const std::string run_once_env = get_env_no_default(RUN_ONCE_ENV, "AAA");
   static const char *env[] = {
     IS_SCRAPER_ENV "=1",
     dbenv.c_str(),
@@ -1075,7 +1079,7 @@ void *node_watcher_distributor(void *arg) {
     libpath.c_str(),
     db_host.c_str(),
     port_env.c_str(),
-    (const char *)run_once_env,
+    run_once_env.c_str(),
     NULL
   };
   std::vector<std::pair<std::string /*acct*/, std::string /*qos*/>>
