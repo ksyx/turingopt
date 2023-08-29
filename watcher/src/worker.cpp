@@ -1374,10 +1374,6 @@ void *node_watcher_distributor(void *arg) {
       size_t cur = 0; bool idx = 0;
       std::queue<std::string> q[2];
       std::queue<std::string> nodemix;
-      size_t target = std::min(task.size(), (size_t) concurrency);
-      for (size_t i = 0; i < target; i++) {
-        q[idx].push(task[cur++].node);
-      }
       while (cur < task.size()) {
         node_set_t excl_set = nodeset;
         size_t missing = concurrency * 2 - q[idx].size();
