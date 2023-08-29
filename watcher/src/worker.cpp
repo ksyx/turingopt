@@ -367,7 +367,7 @@ static void collect_msg_queue() {
   #undef OPC
 }
 
-static inline bool wait_until(time_t timeout) {
+bool wait_until(time_t timeout) {
   static const uint32_t futex_word = 1;
   timespec t;
   t.tv_sec = timeout;

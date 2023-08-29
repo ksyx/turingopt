@@ -69,11 +69,15 @@
 #define UPDATE_JOBINFO_ONLY_ENV WATCHER_ENV("UPDATE_JOBINFO_ONLY")
 #define DEFAULT_DB_PATH "./turingwatch.db"
 
+#define SLURMDB_RECONNECT_MAX 5
+#define SLURMDB_RECONNECT_WAIT 60 // seconds
 #define RESTORE_ENV 0
 
 typedef char *(*slurm_job_state_string_func_t)(uint32_t);
 extern slurm_job_state_string_func_t slurm_job_state_string;
 typedef uint16_t protocol_version_t;
+
+bool wait_until(time_t timeout);
 
 #define _STRINGIFY(X) #X
 #define STRINGIFY(X) _STRINGIFY(X)

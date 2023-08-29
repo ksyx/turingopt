@@ -146,11 +146,21 @@ bool close_slurmdb_conn() {
 }
 
 bool build_slurmdb_conn() {
+  uint8_t fail = 0;
   uint16_t connflag;
+  head:
   if (!(slurm_conn = slurmdb_connection_get(&connflag))) {
+    fail++;
+    if (fail > SLURMDB_RECONNECT_MAX) {
+      exit(1);
+    } else {
+      wait_until(time(NULL) + SLURMDB_RECONNECT_WAIT);
+      goto head;
+    }
     slurm_perror("slurmdb_connection_get");
     return false;
   }
+  fail = 0;
   return true;
 }
 
