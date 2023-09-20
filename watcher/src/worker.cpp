@@ -26,36 +26,6 @@ void worker_finalize() {
   }
 }
 
-static inline bool reset_stmt(sqlite3_stmt *stmt, const char *op) {
-  if (!IS_SQLITE_OK(sqlite3_reset(stmt))) {
-    fprintf(stderr, "Within %s: ", op);
-    SQLITE3_PERROR("reset");
-    return false;
-  }
-  if (!IS_SQLITE_OK(sqlite3_clear_bindings(stmt))) {
-      fprintf(stderr, "Within %s: ", op);
-    SQLITE3_PERROR("clear_bindings");
-    return false;
-  }
-  return true;
-}
-
-static inline bool
-setup_stmt(sqlite3_stmt *&stmt, const char *sql, const char *op) {
-  if (!stmt) {
-    if (!IS_SQLITE_OK(PREPARE_STMT(sql, &stmt, 1))) {
-      fprintf(stderr, "Within %s: ", op);
-      SQLITE3_PERROR("prepare");
-      exit(1);
-    }
-  } else {
-    if (!reset_stmt(stmt, op)) {
-      exit(1);
-    }
-  }
-  return true;
-}
-
 static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
   #define OP "(jobinfo_insert)"
   if (!setup_stmt(jobinfo_insert, JOBINFO_INSERT_SQL, OP)) {
@@ -620,16 +590,8 @@ static inline void fetch_proc_stats (
                  &step.job_id, step_str) == 2
           && (!fread(&c, sizeof(char), 1, f) || !c)) {
         // From slurm protocol definition source, reordered with possibility
-        const struct {
-          const char *name;
-          unsigned int stepid;
-        } mapping[] = {
-          { "batch", SLURM_BATCH_SCRIPT },
-          { "interactive", SLURM_INTERACTIVE_STEP },
-          { "extern", SLURM_EXTERN_CONT },
-          { "TBD", SLURM_PENDING_STEP },
-          { NULL, 0 }
-        };
+        #include "def/slurm_stepid.inc"
+        const auto &mapping = slurm_stepid_mapping;
         bool found_stepid = sscanf(step_str, "%d]", &step.step_id);
         if (!found_stepid) {
           size_t len = strlen(step_str) - 1;

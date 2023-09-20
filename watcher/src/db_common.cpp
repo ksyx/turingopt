@@ -46,7 +46,7 @@ bool step_renew(sqlite3_stmt *stmt, const char *op, int &start, int &end) {
   SQLITE3_FETCH_COLUMNS_START("start", "end");
   SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
     if (!IS_EXPECTED_COLUMN) {
-      PRINT_COLUMN_MISMATCH_MSG(OP);
+      PRINT_COLUMN_MISMATCH_MSG(op);
       return false;
     }
     switch(i) {
@@ -105,6 +105,16 @@ bool renew_watcher(const char *query, worker_info_t *worker) {
   #undef OP
 }
 
+bool sqlite3_exec_wrap(const char *sql, const char *op) {
+  char *sqlite_err = NULL;
+  if (!IS_SQLITE_OK(sqlite3_exec(sqlite_conn, sql, NULL, NULL, &sqlite_err))) {
+    fprintf(stderr, "sqlite3_exec%s: %s\n", op, sqlite_err);
+    sqlite3_free(sqlite_err);
+    return 1;
+  }
+  return 0;
+}
+
 void sqlite3_begin_transaction() {
   sqlite3_exec(SQL_CONN_NAME, "BEGIN TRANSACTION;", NULL, NULL, NULL);
 }
@@ -131,4 +141,33 @@ bool sqlite3_end_transaction() {
   }
   return true;
   #undef OP
+}
+
+bool reset_stmt(sqlite3_stmt *stmt, const char *op) {
+  if (!IS_SQLITE_OK(sqlite3_reset(stmt))) {
+    fprintf(stderr, "Within %s: ", op);
+    SQLITE3_PERROR("reset");
+    return false;
+  }
+  if (!IS_SQLITE_OK(sqlite3_clear_bindings(stmt))) {
+      fprintf(stderr, "Within %s: ", op);
+    SQLITE3_PERROR("clear_bindings");
+    return false;
+  }
+  return true;
+}
+
+bool setup_stmt(sqlite3_stmt *&stmt, const char *sql, const char *op) {
+  if (!stmt) {
+    if (!IS_SQLITE_OK(PREPARE_STMT(sql, &stmt, 1))) {
+      fprintf(stderr, "Within %s: ", op);
+      SQLITE3_PERROR("prepare");
+      return false;
+    }
+  } else {
+    if (!reset_stmt(stmt, op)) {
+      return false;
+    }
+  }
+  return true;
 }

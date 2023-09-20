@@ -1,0 +1,23 @@
+// COPY THIS FILE AND REMOVE THE .in SUFFIX
+
+#include <stddef.h>
+
+const char *analyze_news = "We have fancy summary letters sending out!";
+#define ANALYZE_MAIL_CONTACT "Admin <webmaster@example.com.localhost>"
+const char *analyze_mail_cc[] = {
+  ANALYZE_MAIL_CONTACT,
+  "Alice <alice@example.com.localhost>",
+  "bob@example.com.localhost",
+  NULL
+};
+
+const char *analyze_letter_domain = "example.com.localhost";
+const char *analyze_letter_subject = "HPC Cluster Usage Summary";
+const char *analyze_letter_header
+  = "Hi,\n"
+    "Please check out your cluster usage summary:";
+const char *analyze_letter_footer
+  = "To unsubscribe, please contact " ANALYZE_MAIL_CONTACT "\n"
+    "<hr>"
+    "HPC Admin Team";
+#undef ANALYZE_MAIL_CONTACT

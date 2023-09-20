@@ -40,7 +40,8 @@
 // For matching brackets in source files
 #define SQLITE3_FETCH_COLUMNS_END }}
 #define SQLITE3_FETCH(TY) sqlite3_column_##TY(STMT_REF_NAME, IDX_VAR_REF_NAME)
-#define GET_COLUMN_NAME() sqlite3_column_name(STMT_REF_NAME, IDX_VAR_REF_NAME)
+#define SQLITE3_FETCH_STR(TY) SQLITE3_FETCH(text)
+#define GET_COLUMN_NAME() SQLITE3_FETCH(name)
 #define PRINT_UNEXPECTED_COLUMN_MSG(OP) \
       fprintf(stderr, \
               "fetch_result_column" OP ": unexpected column index %d\n", \
@@ -49,8 +50,8 @@
 #define IS_EXPECTED_COLUMN \
   (strcmp(EXPECTED_COLUMN_NAMES_VAR[IDX_VAR_REF_NAME], GET_COLUMN_NAME()) == 0)
 #define PRINT_COLUMN_MISMATCH_MSG(OP) \
-      fprintf(stderr, "fetch_result_column" OP ": expected %s, got %s\n", \
-                EXPECTED_COLUMN_NAMES_VAR[IDX_VAR_REF_NAME], \
+      fprintf(stderr, "fetch_result_column%s: expecting '%s', got '%s'\n", \
+                OP, EXPECTED_COLUMN_NAMES_VAR[IDX_VAR_REF_NAME], \
                 GET_COLUMN_NAME());
 #else
 #define IS_EXPECTED_COLUMN (true)

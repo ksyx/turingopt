@@ -178,4 +178,11 @@ CREATE TABLE IF NOT EXISTS worker_task_info(
 
 /* Fetch and update range in one statement */
 INSERT OR IGNORE INTO worker_task_info DEFAULT VALUES;
+
+CREATE TABLE IF NOT EXISTS analyze_user_info(
+  user TEXT NOT NULL PRIMARY KEY,
+  skip INTEGER NOT NULL DEFAULT 0 CHECK (skip IN (0, 1))
+) WITHOUT ROWID;
+
+INSERT OR IGNORE INTO analyze_user_info(user, skip) VALUES ("root", 1);
 );

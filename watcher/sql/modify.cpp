@@ -76,6 +76,6 @@ const char *UPDATE_GPU_BATCH_SQL
 
 const char *RENEW_ANALYSIS_OFFSET_SQL
   = SQLITE_CODEBLOCK(
-    INSERT INTO worker_task_info
+    INSERT INTO worker_task_info(analysis_offset)
       SELECT MAX(recordid) AS analysis_offset FROM measurements WHERE TRUE
   ) _RENEW_SQL_UPSERT("analysis_offset");

@@ -1,6 +1,14 @@
 #ifndef _TURINGWATCHER_GPU_INTERFACE_H
 #define _TURINGWATCHER_GPU_INTERFACE_H
 #include "common.h"
+
+enum gpu_provider_scope_t {
+  PROVIDER_NOTHING,
+  PROVIDER_JOBSTEP,
+  PROVIDER_NODE,
+  PROVIDER_CLUSTER,
+};
+
 enum gpu_clock_limit_reason_t {
   CLOCK_LIMIT_BY_APP = 0x01,
   CLOCK_LIMIT_IDLE = 0x02,

@@ -24,10 +24,15 @@ src = files([
   'src/db_common.cpp',
   'src/worker.cpp',
   'src/messaging.cpp',
+  'src/analyzer.cpp',
+
+  'src/analyze_info.c',
+  'src/analyze_mail_config.c',
 
   # SQL Definitions
   'sql/ddl.cpp',
   'sql/modify.cpp',
+  'sql/analyze.cpp',
 
   'src/gpu/interface.cpp'
 ] + gpu_src)

@@ -19,6 +19,7 @@ time_t time_range_start;
 time_t time_range_end;
 
 bool distribute_node_watcher_only;
+static bool is_analyzer;
 
 slurm_job_state_string_func_t slurm_job_state_string;
 
@@ -89,14 +90,9 @@ static inline void build_sqlite_conn() {
     SQLITE3_PERROR("open");
     exit(1);
   }
-  char *sqlite_err = NULL;
-  if (!IS_SQLITE_OK(
-        sqlite3_exec(sqlite_conn, INIT_DB_SQL, NULL, NULL, &sqlite_err))) {
-    SQLITE3_PERROR("exec");
+  if (sqlite3_exec_wrap(INIT_DB_SQL, "(init_db)")) {
     exit(1);
   }
-  sqlite3_free(sqlite_err);
-
   sqlite3_stmt *stmt;
   #define OP "(get_schema_version)"
   if (!IS_SQLITE_OK(PREPARE_STMT(GET_SCHEMA_VERSION_SQL, &stmt, 0))) {
@@ -168,6 +164,9 @@ static void finalize(void) {
   close(sock);
   worker_finalize();
   db_common_finalize();
+  if (is_analyzer || is_watcher) {
+    analyzer_finalize();
+  }
   if (is_scraper || is_parent) {
     finalize_gpu_measurement();
   } else {
@@ -196,6 +195,7 @@ static inline bool initialize(int argc, char *argv[]) {
     = (slurm_job_state_string_func_t)
         dlsym(RTLD_DEFAULT, "slurm_job_state_string");
   distribute_node_watcher_only = getenv(DISTRIBUTE_NODE_WATCHER_ONLY);
+  is_analyzer = getenv(ANALYZE_ONCE_ONLY_ENV);
   if (!slurm_job_state_string) {
     printf("dlsym: %s", dlerror());
     exit(1);
@@ -301,6 +301,8 @@ int main(int argc, char *argv[]) {
       scraper();
     } else if (distribute_node_watcher_only) {
       node_watcher_distributor(argv[0]);
+    } else if (is_analyzer) {
+      do_analyze();
     } else {
       watcher();
     }
