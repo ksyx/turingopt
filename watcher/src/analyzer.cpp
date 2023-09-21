@@ -7,14 +7,18 @@ static int offset_start, offset_end;
 
 #define ANCHORED_TAG(TAG, ANCHOR, TEXT) \
   "<" #TAG " name=\"" ANCHOR "\">" TEXT "</" #TAG ">"
-#define ANCHOR_LINK(TARGET, TEXT) "<a href=\"#" TARGET "\">" TEXT "</a>"
+#define ANCHOR_LINK(TARGET, TEXT, ...) \
+  "<a href=\"#" TARGET "\"" __VA_ARGS__ ">" TEXT "</a>"
 #define TOC_LINK(TEXT) ANCHOR_LINK("toc", TEXT)
 #define HEADER_TEXT(ANCHOR, TEXT) ANCHORED_TAG(h3, ANCHOR, TOC_LINK(TEXT))
 #define SUBHEADER_TEXT(ANCHOR, TEXT) ANCHORED_TAG(h4, ANCHOR, TOC_LINK(TEXT))
-#define PARAGRAPH(TEXT) "<p>" TEXT "</p>"
-#define TABLECELL(TEXT) "<td>" TEXT "</td>"
-#define LISTITEM(TEXT) "<li>" TEXT "</li>"
-#define CENTER(TEXT) "<center>" TEXT "</center>"
+#define WRAPTAG(TAG, TEXT, ...) \
+  "<" #TAG " " __VA_ARGS__ ">" TEXT "</" #TAG ">"
+#define PARAGRAPH(TEXT, ...) WRAPTAG(p, TEXT, __VA_ARGS__)
+#define TABLECELL(TEXT, ...) WRAPTAG(td, TEXT, __VA_ARGS__)
+#define LISTITEM(TEXT, ...) WRAPTAG(li, TEXT, __VA_ARGS__)
+#define CENTER(TEXT, ...) WRAPTAG(center, TEXT, __VA_ARGS__)
+#define BOLD(TEXT, ...) WRAPTAG(b, TEXT, __VA_ARGS__)
 
 const auto mkdir_mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
 
@@ -90,18 +94,17 @@ static inline bool verify_sqlite_ret(int ret, const char *op) {
 static inline
 void run_analysis_stmt(
   sqlite3_stmt *stmt, analysis_info_t *info, const char *title,
-  bool &toc_added, FILE *fp, FILE *header_fp) {
+  bool &toc_added, bool new_toc_row, bool highlight,
+  FILE *fp, FILE *header_fp) {
   if (!stmt) {
     return;
   }
   bool first_run = 0;
   auto title_machine_name = get_machine_name(title);
   const char *title_machine_name_str = title_machine_name.c_str();
-  if (!reset_stmt(stmt, title_machine_name_str)) {
-    return;
-  }
   int sqlite_ret;
   bool has_total = 0;
+  DEBUGOUT_VERBOSE(fprintf(stderr, "%s\n", sqlite3_expanded_sql(stmt)));
   while ((sqlite_ret = sqlite3_step(stmt)) == SQLITE_ROW) {
     if (!first_run) {
       first_run = 1;
@@ -110,16 +113,26 @@ void run_analysis_stmt(
         std::string info_machine_name = get_machine_name(info->name);
         const char *info_machine_name_str = info_machine_name.c_str();
         fprintf(header_fp,
-                "<td>" ANCHOR_LINK("%s", "%s") "<ul>"
+                "%s<td>" ANCHOR_LINK("%s", BOLD("%s")) "<ul>"
                 LISTITEM(ANCHOR_LINK("metrics", "Metrics")),
+                new_toc_row ? "<tr>" : "",
                 info_machine_name_str, info->name);
-        fprintf(fp, HEADER_TEXT("%s", "%s"), info_machine_name_str, info->name);
+        fprintf(fp, HEADER_TEXT("%s", "%s") "\n" PARAGRAPH("%s"),
+                    info_machine_name_str, info->name,
+                    info->analysis_description);
         fprintf(fp,
                 SUBHEADER_TEXT("metrics", "Metrics") "\n" PARAGRAPH("%s") "\n"
                 "<table>",
                 info->headers_description);
-        auto cur_metric = info->fields;
-        while (cur_metric->sql_column_name) {
+        for (auto cur_metric = info->fields;
+             cur_metric->sql_column_name;
+             cur_metric++) {
+          if (cur_metric->flags & ANALYZE_FIELD_PROBLEMS
+              && strcmp(
+                  sqlite3_column_name(stmt, sqlite3_column_count(stmt) - 1),
+                  cur_metric->sql_column_name)) {
+            continue;
+          }
           if (cur_metric->printed_name && cur_metric->help) {
             fprintf(fp, "<tr>"
                     TABLECELL(CENTER("%s"))
@@ -128,26 +141,36 @@ void run_analysis_stmt(
                     cur_metric->sql_column_name,
                     cur_metric->help);
           }
-          if (cur_metric->flags & ANALYZE_FIELD_TOTAL) {
-            has_total = 1;
-          }
-          cur_metric++;
         }
         fputs("</table>", fp);
       }
       fprintf(header_fp,
-              LISTITEM(ANCHOR_LINK("%s", "%s")),
-              title_machine_name_str, title);
-      fprintf(fp, SUBHEADER_TEXT("%s", "%s") PARAGRAPH("%s"),
-                  title_machine_name_str, title, info->analysis_description);
+              LISTITEM(ANCHOR_LINK("%s", "%s", "%s")),
+              title_machine_name_str,
+              highlight ? "style=\"color: revert\"" : "",
+              title);
+      fprintf(fp, SUBHEADER_TEXT("%s", "%s"), title_machine_name_str, title);
       fputs("<table><tr>", fp);
-      auto cur_metric = info->fields;
-      while (cur_metric->sql_column_name) {
-        if (cur_metric->printed_name) {
-          fprintf(fp, "<th>" ANCHOR_LINK("%s", "%s") "</th>\n",
-                      cur_metric->sql_column_name, cur_metric->printed_name);
+      for (auto cur_metric = info->fields;
+            cur_metric->sql_column_name;
+            cur_metric++) {
+        if (cur_metric->flags & ANALYZE_FIELD_PROBLEMS
+            && strcmp(
+                sqlite3_column_name(stmt, sqlite3_column_count(stmt) - 1),
+                cur_metric->sql_column_name)) {
+          continue;
         }
-        cur_metric++;
+        if (cur_metric->printed_name) {
+          if (cur_metric->help) {
+            fprintf(fp, WRAPTAG(th, ANCHOR_LINK("%s", "%s")) "\n",
+                        cur_metric->sql_column_name, cur_metric->printed_name);
+          } else {
+            fprintf(fp, WRAPTAG(th, "%s") "\n", cur_metric->printed_name);
+          }
+        }
+        if (cur_metric->flags & ANALYZE_FIELD_TOTAL) {
+          has_total = 1;
+        }
       }
       fputs("</tr>", fp);
     }
@@ -170,8 +193,9 @@ void run_analysis_stmt(
         tot = SQLITE3_FETCH(int);
       }
       bool is_percentage = cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE;
+      bool met_stepid = 0;
       if (!cur->printed_name) {
-        goto finalize;
+        goto finalize_table_row_loop;
       }
       if (is_percentage) {
         cnt_percentage++;
@@ -182,6 +206,7 @@ void run_analysis_stmt(
       fprintf(fp, "<td%s><span>", has_total && !is_percentage
                   ? " rowspan=\"3\"" : "");
       if (cur->flags & ANALYZE_FIELD_STEP_ID) {
+        met_stepid = 1;
         int id = SQLITE3_FETCH(int);
         #include "def/slurm_stepid.inc"
         auto cur_id = slurm_stepid_mapping;
@@ -198,7 +223,7 @@ void run_analysis_stmt(
         double val = SQLITE3_FETCH(double);
         fprintf(fp,
                 cur->type == ANALYZE_RESULT_INT
-                  ? CENTER("%.0lf") : CENTER("%.2lf"),
+                  ? CENTER("%'.0lf") : CENTER("%'.2lf"),
                 val);
         if (tot) {
           percentages.push(val / tot * 100);
@@ -211,10 +236,11 @@ void run_analysis_stmt(
       } else {
         switch (cur->type) {
           case ANALYZE_RESULT_INT:
-            fprintf(fp, CENTER("%d"), SQLITE3_FETCH(int));
+            fprintf(fp, met_stepid ? CENTER("%'d") : CENTER("%d"),
+                        SQLITE3_FETCH(int));
             break;
           case ANALYZE_RESULT_FLOAT:
-            fprintf(fp, CENTER("%.2lf"), SQLITE3_FETCH(double));
+            fprintf(fp, CENTER("%'.2lf"), SQLITE3_FETCH(double));
             break;
           case ANALYZE_RESULT_STR:
             fprintf(fp, "<code>%s</code>", SQLITE3_FETCH_STR());
@@ -225,7 +251,7 @@ void run_analysis_stmt(
         }
       }
       fputs("</span></td>", fp);
-      finalize:
+      finalize_table_row_loop:
       cur++;
     SQLITE3_FETCH_COLUMNS_END
     if (cur->sql_column_name && !(cur->flags & ANALYZE_FIELD_PROBLEMS)) {
@@ -240,7 +266,8 @@ void run_analysis_stmt(
       fputs("<tr>", fp);
       while (!colspans.empty()) {
         int c = colspans.front();
-        fprintf(fp, "<td colspan=\"%d\"> " CENTER("out of %d results"), c, tot);
+        fprintf(fp, "<td colspan=\"%d\"> " CENTER("out of %'d records"),
+                    c, tot);
         colspans.pop();
       }
       fputs("</tr>\n<tr>", fp);
@@ -257,7 +284,7 @@ void run_analysis_stmt(
     }
   }
   if (first_run) {
-    fputs("</table>", fp);
+    fputs("</table>\n", fp);
     if (!verify_sqlite_ret(sqlite_ret, 
       (std::string("(") + title_machine_name + std::string("(")).c_str())) {
       fputs("Internal error while producing analysis result.", fp);
@@ -268,14 +295,22 @@ void run_analysis_stmt(
 static inline
 void do_analyze(analysis_info_t *info, FILE *fp, FILE *header_fp) {
   bool toc_added = 0;
-  #define ANALYZE(STMT, TITLE) \
-    run_analysis_stmt(STMT, info, TITLE, toc_added, fp, header_fp)
-  ANALYZE(info->latest_problem_stmt, "Latest concerning submissions");
-  ANALYZE(info->latest_analysis_stmt, "All latest submissions");
-  ANALYZE(info->history_analysis_stmt, "Across submission history");
+  static bool newline = 0;
+  #define ANALYZE(STMT, TITLE, HIGHLIGHT) \
+    run_analysis_stmt( \
+      STMT, info, TITLE, toc_added, !newline, HIGHLIGHT, fp, header_fp)
+  ANALYZE(info->latest_problem_stmt, "Latest concerning submissions", 1);
+  ANALYZE(info->latest_analysis_stmt,
+          "All latest submissions",
+          !info->latest_problem_stmt);
+  ANALYZE(info->history_analysis_stmt, "Across submission history", 0);
   #undef ANALYZE
   if (toc_added) {
     fputs("</ul></td>", header_fp);
+    if (newline) {
+      fputs("</tr>\n", header_fp);
+    }
+    newline = !newline;
   }
 }
 
@@ -409,8 +444,12 @@ void do_analyze() {
     // Separate message header and mail header
     fputs("\n", fp);
     fprintf(fp, "<head>%s</head>", analyze_letter_stylesheet);
-    fprintf(fp, "%s\n" HEADER_TEXT("toc", "Table of Contents") "\n<table>\n"
-                "<td>" ANCHOR_LINK("news", "News") "</td>\n",
+    fprintf(fp,
+            "%s\n" HEADER_TEXT("toc", "Table of Contents") "\n<table>\n"
+            WRAPTAG(tr,
+            TABLECELL(
+              ANCHOR_LINK("news", CENTER(BOLD("News"))), "colspan=\"2\""))
+            "\n",
             analyze_letter_header);
     auto header_fp = fp;
     fp = fopen(mail_path.c_str(), "w");
@@ -429,11 +468,17 @@ void do_analyze() {
         cur++;
       }
     }
-    fputs(analyze_letter_footer, fp);
-    fprintf(fp, "<br><code>Analysis batch: %d</code>", offset_start);
+    fprintf(fp, ANCHORED_TAG(p, "footer", "%s")
+                "<br><sub><code>Analysis ID: %d:%s</code></sub>",
+                analyze_letter_footer, offset_start, user);
     fclose(fp);
     finalize_loop:
-    fputs("</table>\n", header_fp);
+    fputs(WRAPTAG(tr,
+            TABLECELL(
+              ANCHOR_LINK("footer", CENTER(BOLD("Ending"))), "colspan=\"2\"")
+          )
+          "</table>\n",
+          header_fp);
     fclose(header_fp);
     post_analyze();
   }
@@ -447,4 +492,5 @@ void do_analyze() {
 #undef BIND_OFFSET
 #undef HEADER_TEXT
 #undef SPAN
+#undef BOLD
 #undef SUBHEADER_TEXT

@@ -281,6 +281,7 @@ static inline bool initialize(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
+  setlocale(LC_NUMERIC, "");
   atexit(finalize);
   if (getenv(PRINT_ONLY_ENV)) {
     if (!build_slurmdb_conn()) {

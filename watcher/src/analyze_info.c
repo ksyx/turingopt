@@ -46,7 +46,15 @@ const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
     border: 1px solid black;
     border-collapse: collapse;
   }
-  th > a, h1 > a, h2 > a, h3 > a, h4 > a, h5 > a, h6 > a {
+  td {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  td > ul, td > ol {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  th > a, td > a, h1 > a, h2 > a, h3 > a, h4 > a, h5 > a, h6 > a, li > a {
     text-decoration: none;
     color: inherit;
   }
@@ -143,11 +151,11 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
     .flags = ANALYZE_FIELD_TOTAL,
   }, {
     .sql_column_name = "avg_util",
-    .printed_name = "Average Util",
+    .printed_name = "Average Util / %",
     .help = "Consider lowering GPU constraint or using partial GPU in case of"
             " low average utilization for easier allocation and saving energy,"
             " or specifying better GPU in case of high average utilization to"
-            " get job done faster",
+            " get job done faster.",
     .type = ANALYZE_RESULT_FLOAT,
     .flags = ANALYZE_FIELD_NO_FLAG
   }, {
@@ -178,7 +186,7 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
   }, {
     .sql_column_name = "avg_clock",
     .printed_name = "Average SM Clock (MHz)",
-    .help = "Average streaming multiprocessor clock provided for reference",
+    .help = "Average streaming multiprocessor clock provided for reference.",
     .type = ANALYZE_RESULT_FLOAT,
     .flags = ANALYZE_FIELD_NO_FLAG,
   }, {

@@ -207,7 +207,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
 const char *ANALYZE_LATEST_GPU_USAGE_SQL
   = "SELECT *, " _SUMMARIZE_GPU_PROBLEM_SQL
     " FROM inmem.gpu_usage_base"
-    " WHERE " _FILTER_LATEST_RECORD_SQL;
+    " WHERE " _FILTER_LATEST_RECORD_SQL
+    " ORDER BY length(problem_tag) DESC, jobid, stepid";
 
 const char *ANALYZE_GPU_USAGE_HISTORY_SQL
   = SQLITE_CODEBLOCK(
