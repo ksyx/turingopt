@@ -21,6 +21,7 @@ static int offset_start, offset_end;
 #define BOLD(TEXT, ...) WRAPTAG(b, TEXT, __VA_ARGS__)
 
 const auto mkdir_mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
+static std::map<std::string, const analyze_problem_t *> problem_info;
 
 static inline void reset_analyze_stmts(bool finalize) {
   #define OP "(reset_analyze_stmts)"
@@ -114,10 +115,12 @@ void run_analysis_stmt(
         const char *info_machine_name_str = info_machine_name.c_str();
         fprintf(header_fp,
                 "%s<td>" ANCHOR_LINK("%s", BOLD("%s")) "<ul>"
-                LISTITEM(ANCHOR_LINK("%s_metrics", "Metrics")),
+                LISTITEM(ANCHOR_LINK("%s_metrics", "Metrics"))
+                LISTITEM(ANCHOR_LINK("%s_problems",
+                                     "Possible problems in the category")),
                 new_toc_row ? "<tr>" : "",
                 info_machine_name_str, info->name,
-                info_machine_name_str);
+                info_machine_name_str, info_machine_name_str);
         fprintf(fp, HEADER_TEXT("%s", "%s") "\n" PARAGRAPH("%s"),
                     info_machine_name_str, info->name,
                     info->analysis_description);
@@ -138,12 +141,32 @@ void run_analysis_stmt(
           }
           if (cur_metric->printed_name && cur_metric->help) {
             fprintf(fp, "<tr>"
-                    TABLECELL(CENTER("%s"))
+                    WRAPTAG(th, CENTER("%s"))
                     TABLECELL(ANCHORED_TAG(p, "%s", "%s")) "</tr>\n",
                     cur_metric->printed_name,
                     cur_metric->sql_column_name,
                     cur_metric->help);
           }
+        }
+        fprintf(fp,
+                "</table>"
+                SUBHEADER_TEXT(
+                  "%s_problems", "Possible problems in the category")
+                "<table>", info_machine_name_str);
+
+        for (auto cur_problem = info->problems;
+              cur_problem->sql_name;
+              cur_problem++) {
+          fprintf(fp,
+                  "<tr>" ANCHORED_TAG(th rowspan="3", "%s", "%s")
+                         WRAPTAG(th, "Cause") TABLECELL("%s") "</tr>\n"
+                  "<tr>" WRAPTAG(th, "Impact") TABLECELL("%s") "</tr>\n"
+                  "<tr>" WRAPTAG(th, "Solution") TABLECELL("%s") "</tr>\n",
+                  cur_problem->sql_name,
+                  cur_problem->printed_name,
+                  cur_problem->cause,
+                  cur_problem->impact,
+                  cur_problem->solution);
         }
         fputs("</table>", fp);
       }
@@ -206,8 +229,8 @@ void run_analysis_stmt(
         colspans.push(cnt_percentage);
         cnt_percentage = 0;
       }
-      fprintf(fp, "<td%s><span>", has_total && !is_percentage
-                  ? " rowspan=\"3\"" : "");
+      fprintf(fp, "<td%s>",
+                  has_total && !is_percentage ? " rowspan=\"3\"" : "");
       if (cur->flags & ANALYZE_FIELD_STEP_ID) {
         met_stepid = 1;
         int id = SQLITE3_FETCH(int);
@@ -236,6 +259,39 @@ void run_analysis_stmt(
                   "%s/%s: no total value available or divison by zero\n",
                   title_machine_name_str, cur->sql_column_name);
         }
+      } else if (cur->flags & ANALYZE_FIELD_PROBLEMS) {
+        auto str = (const char *)SQLITE3_FETCH_STR();
+        std::string cur_problem = "";
+        bool first = 1;
+        while (str) {
+            const char c = *str;
+            if (isalnum(c) || c == '_') {
+              cur_problem.append(1, c);
+            } else if (c == '|' || c == '\0') {
+              if (cur_problem.length()) {
+                if (problem_info.count(cur_problem)) {
+                  if (first) {
+                    fputs("<ul style=\"padding-left: 0.5rem\">", fp);
+                    first = 0;
+                  }
+                  const auto &info = problem_info[cur_problem];
+                  fprintf(fp, LISTITEM(ANCHOR_LINK("%s", "%s")),
+                          info->sql_name, info->printed_name);
+                } else {
+                  fprintf(stderr, "warning: unknown problem %s\n",
+                                  cur_problem.c_str());
+                }
+              cur_problem = "";
+            }
+            if (!c) {
+              break;
+            }
+          }
+          str++;
+        }
+        if (!first) {
+          fputs("</ul>", fp);
+        }
       } else {
         switch (cur->type) {
           case ANALYZE_RESULT_INT:
@@ -253,7 +309,7 @@ void run_analysis_stmt(
                     title_machine_name_str, cur->sql_column_name);
         }
       }
-      fputs("</span></td>", fp);
+      fputs("</td>", fp);
       finalize_table_row_loop:
       cur++;
     SQLITE3_FETCH_COLUMNS_END
@@ -404,9 +460,21 @@ void do_analyze() {
       }
     }
     auto cur = analysis_list;
+    {
+    static bool first = 1;
     while (auto &info = *cur) {
+      const auto set_problem_info
+        = [&](const analyze_problem_t *info) {
+          while (info->sql_name) {
+            problem_info[std::string(info->sql_name)] = info;
+            info++;
+          }
+        };
       #define SETUP(NAME, BIND) \
         if (info->NAME##_sql) { \
+          if (first) { \
+            set_problem_info(info->problems); \
+          } \
           if (!setup_stmt(info->NAME##_stmt, info->NAME##_sql, #NAME)) { \
             exit(1); \
           } \
@@ -425,6 +493,8 @@ void do_analyze() {
       SETUP(history_analysis, 0);
       #undef SETUP
       cur++;
+    }
+    first = 0;
     }
     std::string mail_path = path + std::string(user) + std::string(".mail");
     auto fp = fopen((mail_path + std::string(".header")).c_str(), "w");

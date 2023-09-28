@@ -197,10 +197,10 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
   iif(zero_util_cnt == measurement_cnt, 'completely_no_util',                  \
     rtrim(                                                                     \
       iif(longest_continuous_zero_util >= measurement_cnt / 4,                 \
-          'separable | ', '')                                                  \
+          'try_split | ', '')                                                  \
       ||                                                                       \
       iif(low_util_cnt + zero_util_cnt >= 0.9 * measurement_cnt,               \
-          'try_partitioned_gpu', ''),                                          \
+          'investigate_usage', ''),                                            \
       '| ')) AS problem_tag                                                    \
   )
 

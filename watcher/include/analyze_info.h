@@ -21,21 +21,30 @@ enum analyze_field_flag_t {
   ANALYZE_FIELD_STEP_ID = 0x8,
 };
 
+enum analyze_problem_solution_t {
+  ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+  ANALYZE_SOLUTION_TYPE_NEED_PROFILING,
+  ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION,
+};
+
+typedef struct analyze_problem_t {
+  const char *sql_name;
+  const char *printed_name;
+  const char *cause;
+  const char *impact;
+  const char *solution;
+  enum analyze_problem_solution_t solution_type;
+};
+
 typedef struct analyze_result_field_t {
   const char *sql_column_name;
   // NULL: do not print
   const char *printed_name;
   // NULL: no help info available
   const char *help;
-  enum analyze_result_data_type_t type;
+  const enum analyze_result_data_type_t type;
   // Currently there is nothing OR'd together but maybe in the future
-  enum analyze_field_flag_t flags;
-};
-
-typedef struct analyze_problem_t {
-  const char *name;
-  const char *cause;
-  const char *solution;
+  const enum analyze_field_flag_t flags;
 };
 
 typedef struct sqlite3_stmt;
@@ -45,6 +54,7 @@ typedef struct analysis_info_t {
   const struct analyze_result_field_t *fields;
   const char *analysis_description;
   const char *headers_description;
+  const struct analyze_problem_t *problems;
   #define PAIR(NAME) \
     const char *NAME##_sql; \
     struct sqlite3_stmt *NAME##_stmt;
