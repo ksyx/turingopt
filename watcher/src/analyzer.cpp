@@ -6,7 +6,7 @@ static std::vector<sqlite3_stmt *> create_base_table_stmt;
 static int offset_start, offset_end;
 
 #define ANCHORED_TAG(TAG, ANCHOR, TEXT) \
-  "<" #TAG " name=\"" ANCHOR "\">" TEXT "</" #TAG ">"
+  "<" #TAG " id=\"" ANCHOR "\">" TEXT "</" #TAG ">"
 #define ANCHOR_LINK(TARGET, TEXT, ...) \
   "<a href=\"#" TARGET "\"" __VA_ARGS__ ">" TEXT "</a>"
 #define TOC_LINK(TEXT) ANCHOR_LINK("toc", TEXT)
@@ -114,15 +114,18 @@ void run_analysis_stmt(
         const char *info_machine_name_str = info_machine_name.c_str();
         fprintf(header_fp,
                 "%s<td>" ANCHOR_LINK("%s", BOLD("%s")) "<ul>"
-                LISTITEM(ANCHOR_LINK("metrics", "Metrics")),
+                LISTITEM(ANCHOR_LINK("%s_metrics", "Metrics")),
                 new_toc_row ? "<tr>" : "",
-                info_machine_name_str, info->name);
+                info_machine_name_str, info->name,
+                info_machine_name_str);
         fprintf(fp, HEADER_TEXT("%s", "%s") "\n" PARAGRAPH("%s"),
                     info_machine_name_str, info->name,
                     info->analysis_description);
         fprintf(fp,
-                SUBHEADER_TEXT("metrics", "Metrics") "\n" PARAGRAPH("%s") "\n"
+                SUBHEADER_TEXT("%s_metrics", "Metrics") "\n"
+                PARAGRAPH("%s") "\n"
                 "<table>",
+                info_machine_name_str,
                 info->headers_description);
         for (auto cur_metric = info->fields;
              cur_metric->sql_column_name;
@@ -491,6 +494,5 @@ void do_analyze() {
 #undef LISTITEM
 #undef BIND_OFFSET
 #undef HEADER_TEXT
-#undef SPAN
 #undef BOLD
 #undef SUBHEADER_TEXT
