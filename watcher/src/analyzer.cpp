@@ -207,7 +207,7 @@ void run_analysis_stmt(
     std::queue<int> colspans;
     const double not_an_number = std::nan("0");
     int cnt_percentage = 0;
-    SQLITE3_FETCH_COLUMNS_START()
+    SQLITE3_FETCH_COLUMNS_START(NULL)
     SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
       if (!cur->sql_column_name) {
         break;

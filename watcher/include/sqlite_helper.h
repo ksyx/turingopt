@@ -32,20 +32,25 @@
 #define IDX_VAR_REF_NAME __column_idx__
 #define STMT_REF_NAME __stmt__
 #define SQLITE3_FETCH_COLUMNS_START(...) \
-  { static const char *EXPECTED_COLUMN_NAMES_VAR[] = {__VA_ARGS__};
+  { static const char *EXPECTED_COLUMN_NAMES_VAR[] = {__VA_ARGS__, NULL};
+#define PRINT_UNEXPECTED_COLUMN_MSG(OP) \
+      fprintf(stderr, \
+              "fetch_result_column" OP ": unexpected column index %d\n", \
+              IDX_VAR_REF_NAME);
 #define SQLITE3_FETCH_COLUMNS_LOOP_HEADER(VAR, STMT) \
   for (int VAR = 0; VAR < sqlite3_column_count(STMT); ++VAR) { \
     auto &STMT_REF_NAME = STMT; \
-    auto &IDX_VAR_REF_NAME = VAR;
+    auto &IDX_VAR_REF_NAME = VAR; \
+    if (EXPECTED_COLUMN_NAMES_VAR[0] != NULL \
+        && EXPECTED_COLUMN_NAMES_VAR[VAR] == NULL) { \
+      PRINT_UNEXPECTED_COLUMN_MSG("") \
+      break; \
+    }
 // For matching brackets in source files
 #define SQLITE3_FETCH_COLUMNS_END }}
 #define SQLITE3_FETCH(TY) sqlite3_column_##TY(STMT_REF_NAME, IDX_VAR_REF_NAME)
 #define SQLITE3_FETCH_STR(TY) SQLITE3_FETCH(text)
 #define GET_COLUMN_NAME() SQLITE3_FETCH(name)
-#define PRINT_UNEXPECTED_COLUMN_MSG(OP) \
-      fprintf(stderr, \
-              "fetch_result_column" OP ": unexpected column index %d\n", \
-              IDX_VAR_REF_NAME);
 #if ENABLE_DEBUGOUT
 #define IS_EXPECTED_COLUMN \
   (strcmp(EXPECTED_COLUMN_NAMES_VAR[IDX_VAR_REF_NAME], GET_COLUMN_NAME()) == 0)
