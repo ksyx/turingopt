@@ -418,7 +418,7 @@ void do_analyze() {
           sqlite3_reset(cur);
         }
       }
-      if (sqlite3_exec_wrap(POST_ANALYZE_SQL, "(post_analyze)")) {
+      if (!sqlite3_exec_wrap(POST_ANALYZE_SQL, "(post_analyze)")) {
         exit(1);
       }
     };
@@ -431,7 +431,7 @@ void do_analyze() {
     }
     #endif
     auto user = user_str.c_str();
-    if (sqlite3_exec_wrap(PRE_ANALYZE_SQL, "(prepare_analyze)")) {
+    if (!sqlite3_exec_wrap(PRE_ANALYZE_SQL, "(prepare_analyze)")) {
       exit(1);
     }
     #undef OP

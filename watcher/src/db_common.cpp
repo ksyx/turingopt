@@ -110,9 +110,9 @@ bool sqlite3_exec_wrap(const char *sql, const char *op) {
   if (!IS_SQLITE_OK(sqlite3_exec(sqlite_conn, sql, NULL, NULL, &sqlite_err))) {
     fprintf(stderr, "sqlite3_exec%s: %s\n", op, sqlite_err);
     sqlite3_free(sqlite_err);
-    return 1;
+    return 0;
   }
-  return 0;
+  return 1;
 }
 
 void sqlite3_begin_transaction() {

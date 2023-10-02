@@ -90,7 +90,7 @@ static inline void build_sqlite_conn() {
     SQLITE3_PERROR("open");
     exit(1);
   }
-  if (sqlite3_exec_wrap(INIT_DB_SQL, "(init_db)")) {
+  if (!sqlite3_exec_wrap(INIT_DB_SQL, "(init_db)")) {
     exit(1);
   }
   sqlite3_stmt *stmt;
