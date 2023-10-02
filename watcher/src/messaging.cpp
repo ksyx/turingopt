@@ -183,6 +183,15 @@ static inline void takein(int from) {
   DEBUGOUT(
     fprintf(stderr, "recv: %d %d\n", header.result_cnt, header.usage_cnt);
   )
+  if (header.protocol_ver != protocol_version
+      || header.schema_ver != schema_version) {
+    fprintf(stderr, "warning: mismatching version information -- expecting"
+                    " schema %d protocol %d, got schema %d protocol %d\n",
+                    schema_version, protocol_version,
+                    header.schema_ver, header.protocol_ver);
+    finalize();
+    return;
+  }
   if (header.hostname_len) {
     do_recv(buf, header.hostname_len);
     header.worker.hostname = stage_str(buf);
