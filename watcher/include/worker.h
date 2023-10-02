@@ -18,6 +18,7 @@
 
 #define TRES_ID(X) tres_t::from_str(X)
 #define DISK_TRES TRES_ID("fs/disk")
+#define CPU_TRES TRES_ID("cpu")
 #define GPU_TRES TRES_ID("gres/gpu")
 #define MEM_TRES TRES_ID("mem")
 
@@ -52,13 +53,15 @@ constexpr int ALLOCATION_TIMEOUT = 120;
 
 // No check for existence of mandatory arguments
 struct measurement_rec_t {
+  const int *recordid; /* Optional */
   const slurm_step_id_t *step_id;
   const size_t *dev_in;
   const size_t *dev_out;
   const size_t *res_size;
   const size_t *minor_pagefault; /* Optional */
-  const pid_t *gpu_measurement_batch;
+  const pid_t *gpu_measurement_batch; /* Optional */
 
+  const uint32_t *elapsed; /* Optional */
   const uint64_t *sys_cpu_sec;
   const uint32_t *sys_cpu_usec;
   const uint64_t *user_cpu_sec;
@@ -96,6 +99,12 @@ typedef std::map<pid_t, std::vector<gpu_measurement_t *> >
   STAT_MERGE_DST.NAME += STAT_MERGE_SRC.NAME
 #define AGGERGATE_SCRAPER_STAT_MAX(NAME) \
   STAT_MERGE_DST.NAME = std::max(STAT_MERGE_SRC.NAME, STAT_MERGE_DST.NAME);
+
+typedef std::map<std::pair<uint32_t /*jobid*/, uint32_t /*stepid*/>,
+                 int /*recordid*/> jobstep_recordid_map_t;
+slurmdb_job_cond_t *setup_job_cond();
+void measurement_record_insert(
+  slurmdb_job_cond_t *job_cond, const jobstep_recordid_map_t &map);
 
 bool build_slurmdb_conn();
 bool close_slurmdb_conn();

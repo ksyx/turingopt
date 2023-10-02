@@ -35,9 +35,12 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
   #define BIND(TY, VAR, VAL) SQLITE3_NAMED_BIND(TY, jobinfo_insert, VAR, VAL);
   #define BIND_TEXT(VAR, VAL) NAMED_BIND_TEXT(jobinfo_insert, VAR, VAL);
   BIND(int, ":jobid", job->jobid);
-  tres_t tres_req(job->tres_req_str);
-  BIND(int64, ":mem", tres_req[MEM_TRES] * 1024 * 1024);
-  BIND(int, ":ngpu", tres_req[GPU_TRES]);
+  tres_t tres_alloc(job->tres_alloc_str);
+  BIND(int64, ":mem", tres_alloc[MEM_TRES] * 1024 * 1024);
+  BIND(int, ":timelimit", job->timelimit);
+  BIND(int, ":ended_at", job->end);
+  BIND(int, ":ncpu", tres_alloc[CPU_TRES]);
+  BIND(int, ":ngpu", tres_alloc[GPU_TRES]);
   BIND_TEXT(":node", job->nodes);
   if (job->user) {
     BIND_TEXT(":user", job->user);
@@ -104,6 +107,9 @@ measurement_record_insert(const measurement_rec_t &m) {
   SQLITE3_BIND_START
   #define BIND(TY, VAR, VAL) \
     SQLITE3_NAMED_BIND(TY, measurement_insert, VAR, VAL);
+  if (m.recordid) {
+    BIND(int, ":recordid", *m.recordid);
+  }
   BIND(int, ":watcherid", watcher_id);
   BIND(int, ":jobid", m.step_id->job_id);
   BIND(int, ":stepid", m.step_id->step_id);
@@ -117,6 +123,9 @@ measurement_record_insert(const measurement_rec_t &m) {
   }
   if (m.gpu_measurement_batch) {
     BIND(int, ":gpu_measurement_batch", *m.gpu_measurement_batch);
+  }
+  if (m.elapsed) {
+    BIND(int, ":elapsed", *m.elapsed);
   }
   #define BINDTIMING(VAR) \
     BIND(int64, ":" #VAR "_sec", *m.VAR##_cpu_sec); \
@@ -136,12 +145,22 @@ measurement_record_insert(const measurement_rec_t &m) {
   #undef OP
 }
 
-static inline void measurement_record_insert(slurmdb_step_rec_t *step) {
+static inline void measurement_record_insert(
+  slurmdb_step_rec_t *step, const jobstep_recordid_map_t &recordid_map) {
   measurement_rec_t m;
   tres_t tres_in(step->stats.tres_usage_in_tot);
   tres_t tres_out(step->stats.tres_usage_out_tot);
   tres_t tres_max(step->stats.tres_usage_in_max);
   m.step_id = &step->step_id;
+  {
+  auto pair = std::make_pair(m.step_id->job_id, m.step_id->step_id);
+  if (recordid_map.count(pair)) {
+    m.recordid = &recordid_map.at(pair);
+  } else {
+    m.recordid = NULL;
+  }
+  }
+  m.elapsed = &step->elapsed;
   m.dev_in = &tres_in[DISK_TRES];
   m.dev_out = &tres_out[DISK_TRES];
   m.res_size = &tres_max[MEM_TRES];
@@ -159,6 +178,8 @@ static inline void measurement_record_insert(slurmdb_step_rec_t *step) {
 static inline void measurement_record_insert(const scrape_result_t result) {
   static const size_t clk_tck = sysconf(_SC_CLK_TCK);
   measurement_rec_t m;
+  m.recordid = NULL;
+  m.elapsed = NULL;
   m.step_id = &result.step;
   m.res_size = &result.res;
   m.minor_pagefault = &result.minor_pagefault;
@@ -347,11 +368,62 @@ bool wait_until(time_t timeout) {
   return futex_word;
 }
 
-static inline slurmdb_job_cond_t *setup_job_cond() {
+slurmdb_job_cond_t *setup_job_cond() {
   auto condition = (slurmdb_job_cond_t *) calloc(1, sizeof(slurmdb_job_cond_t));
   condition->flags |= JOBCOND_FLAG_NO_TRUNC;
   condition->db_flags = SLURMDB_JOB_FLAG_NOTSET;
   return condition;
+}
+
+void measurement_record_insert(
+  slurmdb_job_cond_t *job_cond, const jobstep_recordid_map_t &map) {
+  auto &condition = job_cond;
+  List job_list = slurmdb_jobs_get(slurm_conn, condition);
+  ListIterator job_it = slurm_list_iterator_create(job_list);
+  while (const auto job = (slurmdb_job_rec_t *) slurm_list_next(job_it)) {
+    jobinfo_record_insert(job);
+    if (update_jobinfo_only) {
+      goto skip_acct;
+    }
+    #if !SLURM_TRACK_STEPS_REMOVED
+    if (!job->track_steps && !job->steps) {
+      auto job_step =
+        (slurmdb_step_rec_t *) calloc(1, sizeof(slurmdb_step_rec_t));
+      #define COPY(FIELD) job_step->FIELD = job->FIELD;
+      COPY(start); COPY(end); COPY(submit_line); COPY(state); COPY(stats);
+      #define COPYTIMING(FIELD) \
+        COPY(FIELD##_cpu_usec); COPY(FIELD##_cpu_sec);
+      COPYTIMING(user); COPYTIMING(tot); COPYTIMING(sys);
+      #undef COPYTIMING
+      #undef COPY
+      job_step->step_id.job_id = job->jobid;
+      job_step->stepname = job->jobname;
+      job_step->job_ptr = job;
+      measurement_record_insert(job_step, map);
+      free(job_step);
+    } else
+    #endif
+    {
+      ListIterator step_it = slurm_list_iterator_create(job->steps);
+      while (
+        const auto step = (slurmdb_step_rec_t *) slurm_list_next(step_it)) {
+        #if !SLURM_TRACK_STEPS_REMOVED
+        if (!job->track_steps) {
+          step->stats = job->stats;
+        }
+        #endif
+        measurement_record_insert(step, map);
+      }
+      slurm_list_iterator_destroy(step_it);
+    }
+    skip_acct:;
+    DEBUGOUT(
+      fprintf(stderr, "Global measurement for job %d [%s] updated\n",
+        job->jobid, slurm_job_state_string(job->state));
+    );
+  }
+  slurm_list_iterator_destroy(job_it);
+  slurm_list_destroy(job_list);
 }
 
 void watcher() {
@@ -391,56 +463,12 @@ void watcher() {
     timeout = time(NULL) + ACCOUNTING_RPC_INTERVAL;
     condition->usage_start = time_range_start;
     condition->usage_end = time_range_end;
-    List job_list = slurmdb_jobs_get(slurm_conn, condition);
-    ListIterator job_it = slurm_list_iterator_create(job_list);
-    while (const auto job = (slurmdb_job_rec_t *) slurm_list_next(job_it)) {
-      sqlite3_begin_transaction();
-      jobinfo_record_insert(job);
-      if (update_jobinfo_only) {
-        goto skip_acct;
-      }
-      #if !SLURM_TRACK_STEPS_REMOVED
-      if (!job->track_steps && !job->steps) {
-        auto job_step =
-          (slurmdb_step_rec_t *) calloc(1, sizeof(slurmdb_step_rec_t));
-        #define COPY(FIELD) job_step->FIELD = job->FIELD;
-        COPY(start); COPY(end); COPY(submit_line); COPY(state); COPY(stats);
-        #define COPYTIMING(FIELD) \
-          COPY(FIELD##_cpu_usec); COPY(FIELD##_cpu_sec);
-        COPYTIMING(user); COPYTIMING(tot); COPYTIMING(sys);
-        #undef COPYTIMING
-        #undef COPY
-        job_step->stepname = job->jobname;
-        job_step->job_ptr = job;
-        measurement_record_insert(job_step);
-        free(job_step);
-      } else
-      #endif
-      {
-        ListIterator step_it = slurm_list_iterator_create(job->steps);
-        while (
-          const auto step = (slurmdb_step_rec_t *) slurm_list_next(step_it)) {
-          #if !SLURM_TRACK_STEPS_REMOVED
-          if (!job->track_steps) {
-            step->stats = job->stats;
-          }
-          #endif
-          measurement_record_insert(step);
-        }
-        slurm_list_iterator_destroy(step_it);
-      }
-      skip_acct:;
-      DEBUGOUT(
-        fprintf(stderr, "Ending transaction for job %d [%s]\n",
-          job->jobid, slurm_job_state_string(job->state));
-      );
-      if (!sqlite3_end_transaction()) {
-        // why
-        exit(1);
-      }
+    sqlite3_begin_transaction();
+    measurement_record_insert(condition, {});
+    if (!sqlite3_end_transaction()) {
+      // why
+      exit(1);
     }
-    slurm_list_iterator_destroy(job_it);
-    slurm_list_destroy(job_list);
     #if PROCESS_ALL_MSG_BEFORE_NEXT_ROUND
     sleep(PROCESS_ALL_MSG_BEFORE_NEXT_ROUND);
     freeze_queue();

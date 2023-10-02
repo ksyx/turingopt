@@ -84,14 +84,6 @@ static inline std::string get_machine_name(const char *in) {
   return str;
 }
 
-static inline bool verify_sqlite_ret(int ret, const char *op) {
-  if (ret != SQLITE_DONE) {
-    fprintf(stderr, "sqlite3_step%s: %s\n", op, sqlite3_errstr(ret));
-    return 0;
-  }
-  return 1;
-}
-
 static inline
 void run_analysis_stmt(
   sqlite3_stmt *stmt, analysis_info_t *info, const char *title,
@@ -412,12 +404,7 @@ void do_analyze() {
   }
   for (const auto &user_str : users) {
     auto post_analyze = []() {
-      {
-        sqlite3_stmt *cur = NULL;
-        while (cur = sqlite3_next_stmt(sqlite_conn, cur)) {
-          sqlite3_reset(cur);
-        }
-      }
+      cleanup_all_stmts();
       if (!sqlite3_exec_wrap(POST_ANALYZE_SQL, "(post_analyze)")) {
         exit(1);
       }

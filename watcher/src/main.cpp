@@ -101,8 +101,8 @@ static inline void build_sqlite_conn() {
   if (!step_and_verify(stmt, true, OP)) {
     exit(1);
   }
-  SQLITE3_FETCH_COLUMNS_START("schema_version");
   int schema_version = 0;
+  SQLITE3_FETCH_COLUMNS_START("schema_version");
   SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
     if (!IS_EXPECTED_COLUMN) {
       PRINT_COLUMN_MISMATCH_MSG(OP);
@@ -120,7 +120,7 @@ static inline void build_sqlite_conn() {
     exit(1);
   }
   #undef OP
-
+  migrate_db(schema_version);
   // Register watcher
   sqlite3_begin_transaction();
   if (!renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID)) {

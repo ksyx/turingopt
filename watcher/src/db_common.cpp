@@ -39,6 +39,14 @@ bool step_and_verify(sqlite3_stmt *stmt, bool expect_rows, const char *op) {
   return false;
 }
 
+bool verify_sqlite_ret(int ret, const char *op) {
+  if (ret != SQLITE_DONE) {
+    fprintf(stderr, "sqlite3_step%s: %s\n", op, sqlite3_errstr(ret));
+    return 0;
+  }
+  return 1;
+}
+
 bool step_renew(sqlite3_stmt *stmt, const char *op, int &start, int &end) {
   if (!step_and_verify(stmt, true, op)) {
     return false;
@@ -119,8 +127,16 @@ void sqlite3_begin_transaction() {
   sqlite3_exec(SQL_CONN_NAME, "BEGIN TRANSACTION;", NULL, NULL, NULL);
 }
 
+void cleanup_all_stmts() {
+  sqlite3_stmt *cur = NULL;
+  while (cur = sqlite3_next_stmt(sqlite_conn, cur)) {
+    sqlite3_reset(cur);
+  }
+}
+
 bool sqlite3_end_transaction() {
   #define OP "(end_transaction)"
+  cleanup_all_stmts();
   if (!end_transaction_stmt &&
       !IS_SQLITE_OK(PREPARE_STMT("END TRANSACTION", &end_transaction_stmt, 1))
      ) {

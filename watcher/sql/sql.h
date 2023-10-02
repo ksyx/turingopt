@@ -3,7 +3,19 @@
 #define DECLSQL(NAME, ...) extern const char * NAME __VA_ARGS__;
 #ifdef __cplusplus
 #include <cstdint>
-#define DB_SCHEMA_VERSION 1
+#define DB_SCHEMA_VERSION 3
+#define DB_SCHEMA_VERSION_STR "3"
+#define MIGRATE_TARGET_DB_SCHEMA_VERSION 3
+#define MIGRATE_TARGET_DB_SCHEMA_VERSION_STR "3"
+
+#if MIGRATE_TARGET_DB_SCHEMA_VERSION != DB_SCHEMA_VERSION
+  #if ENABLE_DEBUGOUT
+    #warning "Target schema version is not current schema version"
+  #else
+    #error "Target schema version is not current schema version"
+  #endif
+#endif
+
 constexpr uint32_t schema_version = DB_SCHEMA_VERSION;
 #endif
 DECLSQL(INIT_DB_SQL);
@@ -16,6 +28,7 @@ DECLSQL(UPDATE_GPU_BATCH_SQL);
 DECLSQL(MEASUREMENTS_INSERT_SQL);
 DECLSQL(APPLICATION_USAGE_INSERT_SQL);
 DECLSQL(RENEW_ANALYSIS_OFFSET_SQL);
+DECLSQL(RENEW_DB_SCHEMA_VERSION_SQL);
 
 DECLSQL(PRE_ANALYZE_SQL);
 DECLSQL(ANALYZE_LIST_ACTIVE_USERS);

@@ -33,6 +33,7 @@ src = files([
   'sql/ddl.cpp',
   'sql/modify.cpp',
   'sql/analyze.cpp',
+  'sql/migrate.cpp',
 
   'src/gpu/interface.cpp'
 ] + gpu_src)

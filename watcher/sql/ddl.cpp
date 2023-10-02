@@ -1,4 +1,5 @@
 #include "sql_helper.h"
+#include "sql.h"
 
 const char *INIT_DB_SQL = SQLITE_CODEBLOCK(
 CREATE TABLE IF NOT EXISTS watcher(
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS jobinfo(
   submit_line TEXT,
 
   /* requested resources */
+  ncpu INTEGER,
+  timelimit INTEGER, ended_at INTEGER,
   mem INTEGER,
   node INTEGER,
   ngpu INTEGER CHECK((ngpu IS NULL) IS NOT (stepid IS NULL)),
@@ -110,7 +113,8 @@ CREATE TABLE IF NOT EXISTS measurements(
   dev_in INTEGER, dev_out INTEGER,
   user_sec INTEGER NOT NULL, user_usec INTEGER NOT NULL,
   sys_sec INTEGER NOT NULL, sys_usec INTEGER NOT NULL,
-  tot_time INTEGER
+  elapsed INTEGER,
+  tot_time INTEGER,
     GENERATED ALWAYS
     AS (user_sec * 1e6 + user_usec + sys_sec * 1e6 + sys_usec) STORED
     CHECK (tot_time > 0),
@@ -168,10 +172,11 @@ CREATE TABLE IF NOT EXISTS application_usage(
 
 CREATE TABLE IF NOT EXISTS worker_task_info(
   ensure_uniq INTEGER PRIMARY KEY NOT NULL CHECK(ensure_uniq IS 0) DEFAULT 0,
-  schema_version INTEGER DEFAULT 0,
+  schema_version INTEGER DEFAULT NULL,
   gpu_measurement_batch_cnt INTEGER DEFAULT 0,
   analysis_offset INTEGER DEFAULT 0,
 
+  prev_schema_version INTEGER DEFAULT NULL,
   prev_analysis_offset INTEGER DEFAULT 0,
   prev_gpu_measurement_batch_cnt INTEGER DEFAULT 0
 ) WITHOUT ROWID;
