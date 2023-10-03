@@ -303,7 +303,10 @@ void run_analysis_stmt(
       }
       fputs("</td>", fp);
       finalize_table_row_loop:
-      cur++;
+      do {
+        cur++;
+      } while (cur->flags & ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY
+               && info->history_analysis_stmt == stmt);
     SQLITE3_FETCH_COLUMNS_END
     if (cur->sql_column_name && !(cur->flags & ANALYZE_FIELD_PROBLEMS)) {
       fprintf(stderr, "warning: mismatching fields -- looking for %s\n",

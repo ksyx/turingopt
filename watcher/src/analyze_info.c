@@ -160,8 +160,13 @@ ANALYSIS(sys_ratio_analysis) = {
 };
 
 const struct analyze_result_field_t gpu_usage_fields[] = {
-  job_info_fields,
-  {
+  job_info_fields, {
+    .sql_column_name = "gpuid",
+    .printed_name = "GPU",
+    .help = "Index of GPU on machine.",
+    .type = ANALYZE_RESULT_INT,
+    .flags = ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY
+  }, {
     .sql_column_name = "measurement_cnt",
     .printed_name = NULL,
     .help = NULL,

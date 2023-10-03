@@ -19,6 +19,7 @@ enum analyze_field_flag_t {
   ANALYZE_FIELD_PROBLEMS = 0x2,
   ANALYZE_FIELD_SHOW_PERCENTAGE = 0x4,
   ANALYZE_FIELD_STEP_ID = 0x8,
+  ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY = 0x10,
 };
 
 enum analyze_problem_solution_t {
