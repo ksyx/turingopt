@@ -172,8 +172,11 @@ static void finalize(void) {
   } else {
     close_slurmdb_conn();
   }
-  if (SQL_CONN_NAME && !IS_SQLITE_OK(sqlite3_close(SQL_CONN_NAME))) {
-    SQLITE3_PERROR("close");
+  if (SQL_CONN_NAME) {
+    cleanup_all_stmts();
+    if (!IS_SQLITE_OK(sqlite3_close(SQL_CONN_NAME))) {
+      SQLITE3_PERROR("close");
+    }
   }
 }
 

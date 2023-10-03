@@ -38,6 +38,7 @@ void migrate_db(int cur_version) {
     exit(1);
   }
   step_renew(renew_db_schema_version_stmt, OP, start, end);
+  reset_stmt(renew_db_schema_version_stmt, OP);
   if (start == DB_SCHEMA_VERSION) {
     return;
   } else if (start > end || end != MIGRATE_TARGET_DB_SCHEMA_VERSION) {
@@ -77,7 +78,7 @@ void migrate_db(int cur_version) {
         = NO_VAL;
       jobstep_recordid_map_t job_record_map;
       int last_jobid = 0;
-      sqlite3_stmt *cur_stmt = get_latest_global_measurement_for_jobsteps_stmt;
+      sqlite3_stmt *&cur_stmt = get_latest_global_measurement_for_jobsteps_stmt;
       if (!setup_stmt(cur_stmt, GET_LATEST_GLOBAL_MEASUREMENT_FOR_JOBSTEPS_SQL,
                       op)) {
         success = 0;
@@ -135,11 +136,6 @@ void migrate_db(int cur_version) {
   cleanup_all_stmts();
   sqlite3_exec_wrap(FINALIZE_MIGRATE_SQL, "(finalize_migrate)");
   sqlite3_end_transaction();
-  static sqlite3_stmt *stmt_to_finalize[] = {
-    get_latest_global_measurement_for_jobsteps_stmt,
-    FINALIZE_END_ADDR,
-  };
-  finalize_stmt_array(stmt_to_finalize);
   exit(2);
   #undef OP
 }
