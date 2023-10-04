@@ -5,8 +5,9 @@ static sqlite3_stmt *list_active_user_stmt;
 static std::vector<sqlite3_stmt *> create_base_table_stmt;
 static int offset_start, offset_end;
 
+// For compatibility with Microsoft Word, use anchor
 #define ANCHORED_TAG(TAG, ANCHOR, TEXT) \
-  "<" #TAG " id=\"" ANCHOR "\">" TEXT "</" #TAG ">"
+  "<" #TAG ">" "<a name=\"" ANCHOR "\"></a>" TEXT "</" #TAG ">"
 #define ANCHOR_LINK(TARGET, TEXT, ...) \
   "<a href=\"#" TARGET "\"" __VA_ARGS__ ">" TEXT "</a>"
 #define TOC_LINK(TEXT) ANCHOR_LINK("toc", TEXT)
@@ -165,7 +166,7 @@ void run_analysis_stmt(
       fprintf(header_fp,
               LISTITEM(ANCHOR_LINK("%s", "%s", "%s")),
               title_machine_name_str,
-              highlight ? "style=\"color: revert\"" : "",
+              highlight ? "style=\"color: revert; font-weight: bold\"" : "",
               title);
       fprintf(fp, SUBHEADER_TEXT("%s", "%s"), title_machine_name_str, title);
       fputs("<table><tr>", fp);
