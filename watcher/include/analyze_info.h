@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <sql.h>
 
-#define WE_HAVE_SOMEONE_TO_DO_PROFILING_WORK 1
-
 enum analyze_result_data_type_t {
   ANALYZE_RESULT_INT,
   ANALYZE_RESULT_FLOAT,
@@ -66,6 +64,7 @@ typedef struct analysis_info_t {
 };
 
 extern const char *analyze_letter_stylesheet;
+extern const char *profiling_support_instructions;
 
 extern struct analysis_info_t * const analysis_list[];
 extern const char *analyze_news;

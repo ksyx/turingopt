@@ -154,12 +154,41 @@ void run_analysis_stmt(
                   "<tr>" ANCHORED_TAG(th rowspan="3", "%s", "%s")
                          WRAPTAG(th, "Cause") TABLECELL("%s") "</tr>\n"
                   "<tr>" WRAPTAG(th, "Impact") TABLECELL("%s") "</tr>\n"
-                  "<tr>" WRAPTAG(th, "Solution") TABLECELL("%s") "</tr>\n",
+                  "<tr>" WRAPTAG(th, "Solution")
+                         "<td>" PARAGRAPH("%s"),
                   cur_problem->sql_name,
                   cur_problem->printed_name,
                   cur_problem->cause,
                   cur_problem->impact,
                   cur_problem->solution);
+          {
+            const char *solution_str = NULL;
+            switch (cur_problem->solution_type) {
+              case ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM:
+                solution_str = "checking your code and allocation request"
+                               " parameters.";
+                break;
+              case ANALYZE_SOLUTION_TYPE_NEED_PROFILING:
+                if (profiling_support_instructions) {
+                  solution_str = profiling_support_instructions;
+                  break;
+                } else {
+                  solution_str = "profiling your code. Request a consultation"
+                                 " session for more information.";
+                }
+                break;
+              case ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION:
+                solution_str = "requesting a consultation session if needed.";
+                break;
+            }
+            if (solution_str) {
+              fprintf(fp, PARAGRAPH("This problem could be solved by %s"),
+                      solution_str);
+            } else {
+              fputs("warning: unknown solution type.\n", stderr);
+            }
+            fputs("</td></tr>\n", fp);
+          }
         }
         fputs("</table>", fp);
       }

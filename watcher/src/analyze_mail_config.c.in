@@ -4,6 +4,13 @@
 
 const char *analyze_news = "We have fancy summary letters being sent out!";
 #define ANALYZE_MAIL_CONTACT "Admin <webmaster@example.com.localhost>"
+// Automatically prefixed with word by for consistency with other phrasing
+const char *profiling_support_instructions
+  = "contacting <a href=\"mailto:"
+    "ProfilingSupport <beprofiled@example.com.localhost>"
+    "\">profiling support</a> to identify bottleneck of the code. Be sure to"
+    " attach problem summary and measurement rows indicating the problem for"
+    " context.";
 const char *analyze_mail_cc[] = {
   ANALYZE_MAIL_CONTACT,
   "Alice <alice@example.com.localhost>",

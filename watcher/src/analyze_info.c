@@ -6,8 +6,8 @@
     .printed_name = "Job ID",                                                  \
     .help = "For results aggregated across history runs, the Job ID and Step"  \
             " fields shows a representative job step that has the same job"    \
-            " name and submit line, which could be fetched by running sacct"   \
-            " -j <JobID>.<Step> -o Name,SubmitLine",                           \
+            " name and submit line, which could be fetched by running"         \
+            " <code>sacct -j <JobID>.<Step> -o Name,SubmitLine</code>",                           \
     .type = ANALYZE_RESULT_INT,                                                \
     .flags = ANALYZE_FIELD_NO_FLAG                                             \
   }, {                                                                         \
@@ -144,13 +144,7 @@ ANALYSIS(sys_ratio_analysis) = {
       " computationally effective but may not have been captured by other"
       " analysis, possibly due to problems that are not previously identified"
       " and therefore have no specific rules set up, or those that could not be"
-      " determined with available metrics."
-      #if WE_HAVE_SOMEONE_TO_DO_PROFILING_WORK
-      " In this case, it is suggested to submit your entire submission for"
-      " profiling, which is of low effort on your side and could potentially"
-      " speed up your work."
-      #endif
-  ,
+      " determined with available metrics.",
   .headers_description
     = "The columns are the number of sampled time slice having ratios in the"
       " shown range when the time spent on system requests (system time) is"
