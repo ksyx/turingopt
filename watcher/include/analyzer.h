@@ -6,6 +6,7 @@
 #include "analyze_info.h"
 
 #include <cmath>
+#include <sstream>
 
 void analyzer_finalize();
 void do_analyze();

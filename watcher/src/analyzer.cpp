@@ -89,7 +89,7 @@ static inline std::string get_machine_name(const char *in) {
 static inline
 void run_analysis_stmt(
   sqlite3_stmt *stmt, analysis_info_t *info, const char *title,
-  bool &toc_added, bool new_toc_row, bool highlight,
+  std::string &tldr, bool &toc_added, bool new_toc_row, bool highlight,
   FILE *fp, FILE *header_fp) {
   if (!stmt) {
     return;
@@ -99,8 +99,11 @@ void run_analysis_stmt(
   const char *title_machine_name_str = title_machine_name.c_str();
   int sqlite_ret;
   bool has_total = 0;
+  std::map<const analyze_problem_t *, int> problem_cnt;
   DEBUGOUT_VERBOSE(fprintf(stderr, "%s\n", sqlite3_expanded_sql(stmt)));
+  int tot = 0;
   while ((sqlite_ret = sqlite3_step(stmt)) == SQLITE_ROW) {
+    tot++;
     if (!first_run) {
       first_run = 1;
       if (!toc_added) {
@@ -297,7 +300,8 @@ void run_analysis_stmt(
                     fputs("<ul style=\"padding-left: 0.5rem\">", fp);
                     first = 0;
                   }
-                  const auto &info = problem_info[cur_problem];
+                  auto &info = problem_info[cur_problem];
+                  problem_cnt[info]++;
                   fprintf(fp, LISTITEM(ANCHOR_LINK("%s", "%s")),
                           info->sql_name, info->printed_name);
                 } else {
@@ -368,22 +372,56 @@ void run_analysis_stmt(
       fputs("</tr>\n", fp);
     }
   }
+  bool has_named_problem = problem_cnt.size();
+  if (has_named_problem || stmt == info->latest_problem_stmt) {
+    auto title_str = std::string(title);
+    {
+    char &title_lead = title_str[0];
+    if (title_lead >= 'A' && title_lead <= 'Z') {
+      title_lead = title_lead - 'A' + 'a';
+    }
+    }
+    std::stringstream out;
+    out << "<li>" << (has_named_problem ? "Within" : "Found") << " " << tot
+        << " " << (has_named_problem ? "record" : "")
+        << (has_named_problem && tot > 1 ? "s" : "")
+        << (has_named_problem ? " in " : "")
+        << "<a href=\"#" << title_machine_name << "\" "
+          << (highlight ? "style=\"color: revert\"" : "") << ">"
+        << "<b>" << title_str << "</b></a>"
+        << (has_named_problem ? "<ul>" : "</li>\n");
+    for (const auto &[problem, cnt] : problem_cnt) {
+      out << "<li>" << cnt << " entr" << (cnt == 1 ? "y has" : "ies have")
+          << " problem <a href=\"#" << problem->sql_name << "\">"
+          << "<b>" << problem->printed_name << "</b></a>\n";
+    }
+    if (has_named_problem) {
+      out << "</ul></li>";
+    }
+    tldr += out.str();
+  }
   if (first_run) {
     fputs("</table>\n", fp);
     if (!verify_sqlite_ret(sqlite_ret, 
-      (std::string("(") + title_machine_name + std::string("(")).c_str())) {
+      (std::string("(") + title_machine_name + std::string(")")).c_str())) {
       fputs("Internal error while producing analysis result.", fp);
     }
   }
 }
 
 static inline
-void do_analyze(analysis_info_t *info, FILE *fp, FILE *header_fp) {
+void do_analyze(
+  analysis_info_t *info, std::string &tldr, FILE *fp, FILE *header_fp) {
   bool toc_added = 0;
   static bool newline = 0;
+  const auto tldr_len = tldr.length();
+  std::stringstream out;
+  out << "<li>For analysis <a href=\"#" << get_machine_name(info->name)
+      << "\"><b>" << info->name << "</b></a><ul>";
+  tldr += out.str();
   #define ANALYZE(STMT, TITLE, HIGHLIGHT) \
     run_analysis_stmt( \
-      STMT, info, TITLE, toc_added, !newline, HIGHLIGHT, fp, header_fp)
+      STMT, info, TITLE, tldr, toc_added, !newline, HIGHLIGHT, fp, header_fp)
   ANALYZE(info->latest_problem_stmt, "Latest concerning submissions", 1);
   ANALYZE(info->latest_analysis_stmt,
           "All latest submissions",
@@ -396,6 +434,11 @@ void do_analyze(analysis_info_t *info, FILE *fp, FILE *header_fp) {
       fputs("</tr>\n", header_fp);
     }
     newline = !newline;
+  }
+  if (tldr_len != tldr.length()) {
+    tldr += std::string("</ul></li>\n");
+  } else {
+    tldr.resize(tldr_len);
   }
 }
 
@@ -538,9 +581,13 @@ void do_analyze() {
     // Separate message header and mail header
     fputs("\n", fp);
     bool has_usage = summary_letter_usage[0];
+    std::string tldr = "";
     fprintf(fp, "<head>%s</head>", analyze_letter_stylesheet);
     fprintf(fp,
             "%s\n" HEADER_TEXT("toc", "Table of Contents") "\n<table>\n"
+            WRAPTAG(tr,
+              TABLECELL(ANCHOR_LINK("tldr", CENTER(BOLD("TL; DR"))),
+                        COLSPAN(2)))
             WRAPTAG(tr,
             "%s"
             TABLECELL(ANCHOR_LINK("news", CENTER(BOLD("News"))), "%s"))
@@ -566,7 +613,7 @@ void do_analyze() {
     {
       auto cur = analysis_list;
       while (auto info = *cur) {
-        do_analyze(info, fp, header_fp);
+        do_analyze(info, tldr, fp, header_fp);
         cur++;
       }
     }
@@ -585,6 +632,26 @@ void do_analyze() {
           )
           "</table>\n",
           fp);
+
+    fputs(HEADER_TEXT("tldr", "TL; DR"), fp);
+    if (tldr.length()) {
+      fprintf(fp,
+              WRAPTAG(table,
+                TABLECELL(
+                  PARAGRAPH("All " BOLD("Bold")
+                            " texts in this section are clickable!")
+                  WRAPTAG(ul, "%s")
+                  PARAGRAPH("Check out the instructions below for the best way"
+                            " of reading this summary letter."))),
+              tldr.c_str());
+    } else {
+      fputs(PARAGRAPH(
+                "Nice! No problem identified and please check out the data"
+                " to have a better comprehension of your job characteristics."
+                " Feel free to send us any problem identified by yourself and"
+                " it would be truly helpful for all cluster users."),
+              fp);
+    }
 
     if (has_usage) {
       fputs(HEADER_TEXT("usage", "Usage Instructions"), fp);
