@@ -41,6 +41,37 @@
 
 #define STRINGIFY_BLOCK(...) #__VA_ARGS__
 
+const char *summary_letter_usage[] = {
+  "For best experience, use browser-based email rendering engine. Certain"
+  " email clients like Outlook Desktop have the functionality of"
+  " <a href=\"https://support.microsoft.com/en-us/office/view-an-email-in-your"
+  "-browser-87aa5c86-be18-4f70-b408-92c814bd96ec\" style=\"color: revert;\">"
+  "opening the email in browser</a>.",
+  "This letter is designed for you to have a better observability of the jobs"
+  " and identify problems related to resource usage, including underusage or"
+  " misusage, so that you could <b>use less</b> to have the same effect or spot"
+  " possible <b>bottlenecks</b> of the submissions. This not only helps you to"
+  " better utilize the resources and potentially speed up your jobs, but also"
+  " contributes to a collective effort of taking up what really need and make"
+  " queues move faster. All these could contribute to a greener computing.",
+  "Internal links are heavily used in this letter and it is <b>strongly</b>"
+  " advised to use them to avoid scrolling overwhelmingly. <b>All</b> text in"
+  " table of contents and headers are clickable and would respectively bring"
+  " you to corresponding section or back to table of contents. Besides, all of"
+  " the <b>identified problems</b> and many of the <b>column headers</b> are"
+  " also clickable, which could bring you to a detailed explanation of these"
+  " names. <b>Please submit a feedback if anything you don't understand is not"
+  " explained well, including the usage of this letter.</b>",
+  "The highlighted and bolded sections in table of contents are suggested to"
+  " read first for getting the most out of this letter. Following many users'"
+  " convention, the measurements are also aggregated by job name across the"
+  " entire measurement dataset collected so far for a comprehensive overview"
+  " of job characteristic.Besides identifying problems, the raw data"
+  " contributing to identifying the problems are also included for your"
+  " reference.",
+  NULL
+};
+
 const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
   <style>
   table, th, td {

@@ -65,6 +65,7 @@ typedef struct analysis_info_t {
 
 extern const char *analyze_letter_stylesheet;
 extern const char *profiling_support_instructions;
+extern const char *summary_letter_usage[];
 
 extern struct analysis_info_t * const analysis_list[];
 extern const char *analyze_news;
@@ -73,6 +74,8 @@ extern const char *analyze_mail_cc[];
 extern const char *analyze_letter_subject;
 extern const char *analyze_letter_header;
 extern const char *analyze_letter_footer;
+extern const char *analyze_letter_feedback_link_analysis_id_var;
+extern const char *analyze_letter_feedback_link;
 
 #ifdef __cplusplus
 extern "C"

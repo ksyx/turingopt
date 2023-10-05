@@ -20,6 +20,7 @@ static int offset_start, offset_end;
 #define LISTITEM(TEXT, ...) WRAPTAG(li, TEXT, __VA_ARGS__)
 #define CENTER(TEXT, ...) WRAPTAG(center, TEXT, __VA_ARGS__)
 #define BOLD(TEXT, ...) WRAPTAG(b, TEXT, __VA_ARGS__)
+#define COLSPAN(X) "colspan=\"" #X "\""
 
 const auto mkdir_mode = S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH;
 static std::map<std::string, const analyze_problem_t *> problem_info;
@@ -350,7 +351,7 @@ void run_analysis_stmt(
       fputs("<tr>", fp);
       while (!colspans.empty()) {
         int c = colspans.front();
-        fprintf(fp, "<td colspan=\"%d\"> " CENTER("out of %'d records"),
+        fprintf(fp, "<td " COLSPAN(%d) ">" CENTER("out of %'d records"),
                     c, tot);
         colspans.pop();
       }
@@ -536,14 +537,20 @@ void do_analyze() {
             analyze_letter_subject);
     // Separate message header and mail header
     fputs("\n", fp);
+    bool has_usage = summary_letter_usage[0];
     fprintf(fp, "<head>%s</head>", analyze_letter_stylesheet);
     fprintf(fp,
             "%s\n" HEADER_TEXT("toc", "Table of Contents") "\n<table>\n"
             WRAPTAG(tr,
-            TABLECELL(
-              ANCHOR_LINK("news", CENTER(BOLD("News"))), "colspan=\"2\""))
+            "%s"
+            TABLECELL(ANCHOR_LINK("news", CENTER(BOLD("News"))), "%s"))
             "\n",
-            analyze_letter_header);
+            analyze_letter_header,
+            has_usage ?
+              TABLECELL(
+                ANCHOR_LINK("usage", CENTER(BOLD("Usage Instructions")))
+              ) : "",
+            has_usage ? "" : COLSPAN(2));
     auto header_fp = fp;
     std::string analysis_id =
       std::to_string(offset_start) + std::string(":") + std::string(user);
@@ -571,13 +578,41 @@ void do_analyze() {
                 analyze_letter_footer, analysis_id.c_str());
     fclose(fp);
     finalize_loop:
+    fp = header_fp;
     fputs(WRAPTAG(tr,
             TABLECELL(
-              ANCHOR_LINK("footer", CENTER(BOLD("Ending"))), "colspan=\"2\"")
+              ANCHOR_LINK("footer", CENTER(BOLD("Ending"))), COLSPAN(2))
           )
           "</table>\n",
-          header_fp);
-    fclose(header_fp);
+          fp);
+
+    if (has_usage) {
+      fputs(HEADER_TEXT("usage", "Usage Instructions"), fp);
+      bool is_list = summary_letter_usage[1];
+      fprintf(fp, "<table><td>%s", is_list ? "<ul>" : "");
+      for (auto cur = summary_letter_usage; *cur; cur++) {
+        fprintf(fp, LISTITEM(PARAGRAPH("%s"))"\n", *cur);
+      }
+      if (analyze_letter_feedback_link) {
+        std::string analysis_id_param = "";
+        if (analyze_letter_feedback_link_analysis_id_var) {
+          analysis_id_param
+            = std::string(strchr(analyze_letter_feedback_link, '?') ? "&" : "?")
+              + std::string(analyze_letter_feedback_link_analysis_id_var)
+              + std::string("=")
+              + analysis_id;
+        }
+        fprintf(fp,
+                LISTITEM(PARAGRAPH(
+                  "Make sure to complete <a href=\"%s%s\"> the feedback"
+                  " form</a> for this summary letter to be continuously"
+                  " improved and bring you more valuable information!")),
+                analyze_letter_feedback_link,
+                analysis_id_param.c_str());
+      }
+      fprintf(fp, "%s</td></table>", is_list ? "</ul>" : "");
+    }
+    fclose(fp);
     post_analyze();
   }
   #undef OP
@@ -591,3 +626,4 @@ void do_analyze() {
 #undef HEADER_TEXT
 #undef BOLD
 #undef SUBHEADER_TEXT
+#undef COLSPAN

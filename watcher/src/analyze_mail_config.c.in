@@ -18,6 +18,12 @@ const char *analyze_mail_cc[] = {
   NULL
 };
 
+// Composes the link as [[feedback_link]]?[[feedback_link_analysis_id_var]]=<id>
+// Set feedback_link or id_var to NULL to disable printing revelant information
+const char *analyze_letter_feedback_link_analysis_id_var = "letter_ref";
+const char *analyze_letter_feedback_link
+  = "https://example.com/feedback/summary_letter";
+
 const char *analyze_letter_domain = "example.com.localhost";
 const char *analyze_letter_subject = "HPC Cluster Usage Summary";
 const char *analyze_letter_header
