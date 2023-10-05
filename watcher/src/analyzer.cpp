@@ -545,6 +545,8 @@ void do_analyze() {
             "\n",
             analyze_letter_header);
     auto header_fp = fp;
+    std::string analysis_id =
+      std::to_string(offset_start) + std::string(":") + std::string(user);
     fp = fopen(mail_path.c_str(), "w");
     if (!fp) {
       perror("fopen");
@@ -562,8 +564,11 @@ void do_analyze() {
       }
     }
     fprintf(fp, ANCHORED_TAG(p, "footer", "%s")
-                "<br><sub><code>Analysis ID: %d:%s</code></sub>",
-                analyze_letter_footer, offset_start, user);
+                WRAPTAG(sub,
+                        WRAPTAG(code, "Analysis ID: %s")
+                        "<br>"
+                        ANCHOR_LINK("toc", "Top")),
+                analyze_letter_footer, analysis_id.c_str());
     fclose(fp);
     finalize_loop:
     fputs(WRAPTAG(tr,

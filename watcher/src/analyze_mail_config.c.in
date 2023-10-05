@@ -24,7 +24,8 @@ const char *analyze_letter_header
   = "Hi,\n"
     "Please check out your cluster usage summary:";
 const char *analyze_letter_footer
-  = "To unsubscribe, please contact " ANALYZE_MAIL_CONTACT "\n"
+  = "To unsubscribe, please contact"
+    " <a href=\"mailto:" ANALYZE_MAIL_CONTACT "\">us</a>.\n"
     "<hr>"
     "HPC Admin Team";
 #undef ANALYZE_MAIL_CONTACT

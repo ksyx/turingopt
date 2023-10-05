@@ -20,7 +20,7 @@
     .sql_column_name = "name",                                                 \
     .printed_name = "Name",                                                    \
     .help = "This field is formed by joining job name and step name with"      \ 
-            " slash",                                                          \
+            " slash.",                                                         \
     .type = ANALYZE_RESULT_STR,                                                \
     .flags = ANALYZE_FIELD_NO_FLAG                                             \
   }
