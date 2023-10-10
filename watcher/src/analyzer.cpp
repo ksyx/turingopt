@@ -102,6 +102,7 @@ void run_analysis_stmt(
   std::map<const analyze_problem_t *, int> problem_cnt;
   DEBUGOUT_VERBOSE(fprintf(stderr, "%s\n", sqlite3_expanded_sql(stmt)));
   int tot = 0;
+  bool is_history_analysis = info->history_analysis_stmt == stmt;
   while ((sqlite_ret = sqlite3_step(stmt)) == SQLITE_ROW) {
     tot++;
     if (!first_run) {
@@ -210,6 +211,10 @@ void run_analysis_stmt(
             && strcmp(
                 sqlite3_column_name(stmt, sqlite3_column_count(stmt) - 1),
                 cur_metric->sql_column_name)) {
+          continue;
+        }
+        if (cur_metric->flags & ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY
+            && is_history_analysis) {
           continue;
         }
         if (cur_metric->printed_name) {
@@ -341,7 +346,7 @@ void run_analysis_stmt(
       do {
         cur++;
       } while (cur->flags & ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY
-               && info->history_analysis_stmt == stmt);
+               && is_history_analysis);
     SQLITE3_FETCH_COLUMNS_END
     if (cur->sql_column_name && !(cur->flags & ANALYZE_FIELD_PROBLEMS)) {
       fprintf(stderr, "warning: mismatching fields -- looking for %s\n",
