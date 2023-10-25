@@ -90,6 +90,9 @@ const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
     text-decoration: none;
     color: inherit;
   }
+  code {
+    white-space: pre;
+  }
   span[class="x_field_help"] {
     text-decoration: underline;
     text-decoration-style: dotted;
@@ -189,7 +192,7 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
     .sql_column_name = "gpuid",
     .printed_name = "GPU",
     .help = "Index of GPU on machine.",
-    .type = ANALYZE_RESULT_INT,
+    .type = ANALYZE_RESULT_STR,
     .flags = ANALYZE_FIELD_NOT_IN_ACROSS_HISTORY
   }, {
     .sql_column_name = "measurement_cnt",
@@ -221,7 +224,7 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
     .flags = ANALYZE_FIELD_SHOW_PERCENTAGE,
   }, {
     .sql_column_name = "longest_continuous_zero_util",
-    .printed_name = "Longest Countiunous No Util",
+    .printed_name = "Longest Contiunous No Util",
     .help = "Number of continuous measurements showing zero utilization of the"
             " GPU streaming multiprocessor.",
     .type = ANALYZE_RESULT_INT,

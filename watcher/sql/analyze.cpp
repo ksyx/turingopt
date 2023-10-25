@@ -47,13 +47,17 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         FROM inmem.measurements
     ), recombined_jobinfo AS MATERIALIZED (
       SELECT
-      jobid, stepid, ifnull(user, first_value(user) OVER win) AS user,
-      first_value(name) OVER win || '/'
-        || CASE WHEN name IS NULL THEN 'null' ELSE name END AS name,
-      CASE
-        WHEN submit_line IS NULL THEN first_value(submit_line) OVER win
-        ELSE submit_line END
-        AS submit_line
+        jobid, stepid,
+        first_value(user) OVER win AS user,
+        first_value(name) OVER win || '/' || iif(name IS NULL, 'null', name)
+          AS name,
+        first_value(submit_line) OVER win AS submit_line,
+        first_value(ngpu) OVER win AS ngpu,
+        first_value(nnodes) OVER win AS nnodes,
+        started_at - first_value(started_at) OVER win AS step_start_offset,
+        ended_at - first_value(started_at) OVER win AS step_end_offset,
+        first_value(ended_at - started_at) OVER win AS job_length,
+        ifnull(timelimit, first_value(timelimit) OVER win) AS timelimit
       FROM jobinfo
       WHERE user IS NULL OR user IS :user
     WINDOW win AS (PARTITION BY jobid ORDER BY stepid NULLS FIRST)
@@ -169,25 +173,26 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       FROM gpu_measurements_flagged
       WINDOW win AS (PARTITION BY jobid, stepid, gpuid ORDER BY batch)
     )
-    SELECT inmem.timeseries.jobid, inmem.timeseries.stepid,
-           inmem.timeseries.latest_recordid, inmem.timeseries.measurement_batch,
-           name, submit_line, batch AS gpu_measurement_batch, gpuid,
+    SELECT ts.watcherid, ts.jobid, ts.stepid, ts.latest_recordid, ts.nnodes,
+           ts.measurement_batch, name, submit_line,
+           batch AS gpu_measurement_batch, gpuid,
            power_usage, temperature, sm_clock, util, zero_segment_length
-    FROM inmem.timeseries, gpu_measurements_flagged
-    WHERE inmem.timeseries.gpu_measurement_batch IS NOT NULL
-          AND gpu_measurements_flagged.batch
-              == inmem.timeseries.gpu_measurement_batch
-          AND gpu_measurements_flagged.jobid == inmem.timeseries.jobid
-          AND gpu_measurements_flagged.stepid == inmem.timeseries.stepid
-    ) SELECT jobid, stepid, latest_recordid, name, gpuid, submit_line,
-       count(util) AS measurement_cnt,
+    FROM inmem.timeseries AS ts, gpu_measurements_flagged
+    WHERE ts.gpu_measurement_batch IS NOT NULL
+          AND gpu_measurements_flagged.batch == ts.gpu_measurement_batch
+          AND gpu_measurements_flagged.jobid == ts.jobid
+          AND gpu_measurements_flagged.stepid == ts.stepid
+    ) SELECT gpu_usage_base.jobid, gpu_usage_base.stepid, latest_recordid, name,
+       iif(nnodes > 1, target_node || '/', '') || gpuid AS gpuid,
+       submit_line, count(util) AS measurement_cnt,
        avg(util) AS avg_util, sum(zero_segment_length) AS zero_util_cnt,
        count(util) FILTER (WHERE util > 0 AND util < 13) AS low_util_cnt,
        max(zero_segment_length) AS longest_continuous_zero_util,
        avg(sm_clock) AS avg_clock, avg(power_usage) / 100 AS avg_power_usage,
        avg(temperature) AS avg_temperature
-      FROM gpu_usage_base
-      GROUP BY jobid, stepid, gpuid;
+      FROM gpu_usage_base, watcher
+      WHERE watcher.id == watcherid
+      GROUP BY gpu_usage_base.jobid, gpu_usage_base.stepid, target_node, gpuid;
 ), 0};
 
 #define _FILTER_LATEST_RECORD_SQL \
@@ -196,7 +201,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
 #define _SUMMARIZE_GPU_PROBLEM_SQL SQLITE_CODEBLOCK(                           \
   iif(zero_util_cnt == measurement_cnt, 'completely_no_util',                  \
     rtrim(                                                                     \
-      iif(longest_continuous_zero_util >= measurement_cnt / 4,                 \
+      iif(longest_continuous_zero_util >= measurement_cnt * 0.25,                 \
           'try_split | ', '')                                                  \
       ||                                                                       \
       iif(low_util_cnt + zero_util_cnt >= 0.9 * measurement_cnt,               \
@@ -208,7 +213,7 @@ const char *ANALYZE_LATEST_GPU_USAGE_SQL
   = "SELECT *, " _SUMMARIZE_GPU_PROBLEM_SQL
     " FROM inmem.gpu_usage_base"
     " WHERE " _FILTER_LATEST_RECORD_SQL
-    " ORDER BY length(problem_tag) DESC, jobid, stepid";
+    " ORDER BY length(problem_tag) DESC, name, jobid, stepid";
 
 const char *ANALYZE_GPU_USAGE_HISTORY_SQL
   = SQLITE_CODEBLOCK(
@@ -240,7 +245,7 @@ const char *ANALYZE_GPU_USAGE_HISTORY_SQL
 #define _ANALYZE_SYS_TIME_RATIO_SQL(EXTRA_CONDITION) \
   "SELECT * FROM inmem.sys_ratio" \
   "  WHERE " _FILTER_LATEST_RECORD_SQL " " EXTRA_CONDITION \
-  "  ORDER BY jobid, stepid, measurement_batch"
+  "  ORDER BY name, jobid, stepid, measurement_batch"
 
 const char *ANALYSIS_LIST_PROBLEMATIC_LATEST_SYS_RATIO_SQL
   = _ANALYZE_SYS_TIME_RATIO_SQL(

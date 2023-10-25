@@ -334,7 +334,14 @@ void run_analysis_stmt(
             fprintf(fp, CENTER("%'.2lf"), SQLITE3_FETCH(double));
             break;
           case ANALYZE_RESULT_STR:
-            fprintf(fp, "<code>%s</code>", SQLITE3_FETCH_STR());
+            {
+              const char *str = (const char *)SQLITE3_FETCH_STR();
+              bool multiline = strchr(str, '\n');
+              fprintf(fp, "%s" WRAPTAG(code, "%s") "%s",
+                          multiline ? "" : "<center>",
+                          str,
+                          multiline ? "" : "</center>");
+            }
             break;
           default:
             fprintf(stderr, "%s/%s: unknown data type\n",
