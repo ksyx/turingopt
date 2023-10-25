@@ -426,11 +426,12 @@ void do_analyze(
   analysis_info_t *info, std::string &tldr, FILE *fp, FILE *header_fp) {
   bool toc_added = 0;
   static bool newline = 0;
-  const auto tldr_len = tldr.length();
+  const auto tldr_len_old = tldr.length();
   std::stringstream out;
   out << "<li>For analysis <a href=\"#" << get_machine_name(info->name)
       << "\"><b>" << info->name << "</b></a><ul>";
   tldr += out.str();
+  const auto tldr_len = tldr.length();
   #define ANALYZE(STMT, TITLE, HIGHLIGHT) \
     run_analysis_stmt( \
       STMT, info, TITLE, tldr, toc_added, !newline, HIGHLIGHT, fp, header_fp)
@@ -450,7 +451,7 @@ void do_analyze(
   if (tldr_len != tldr.length()) {
     tldr += std::string("</ul></li>\n");
   } else {
-    tldr.resize(tldr_len);
+    tldr.resize(tldr_len_old);
   }
 }
 
