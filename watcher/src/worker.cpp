@@ -3,6 +3,7 @@
 static sqlite3_stmt *measurement_insert;
 static sqlite3_stmt *jobinfo_insert;
 static sqlite3_stmt *application_usage_insert;
+static sqlite3_stmt *jobstep_available_cpu_insert;
 static sqlite3_stmt *gpu_measurement_insert;
 static sqlite3_stmt *gpu_measurement_batch_renew;
 
@@ -13,6 +14,7 @@ void worker_finalize() {
     measurement_insert,
     jobinfo_insert,
     application_usage_insert,
+    jobstep_available_cpu_insert,
     gpu_measurement_insert,
     gpu_measurement_batch_renew,
     FINALIZE_END_ADDR
@@ -322,37 +324,75 @@ static void collect_msg_queue() {
       result.scrape_results.pop();
     }
     #define OPC "(application_usage)"
-    if (!setup_stmt(application_usage_insert,
+    if (setup_stmt(application_usage_insert,
                     APPLICATION_USAGE_INSERT_SQL,
                     OPC)) {
-      finalize();
-      continue;
+      while (!result.usages.empty()) {
+        const auto &front = result.usages.front();
+        std::string app(front.app + (size_t) *result.buf);
+        DEBUGOUT(
+          fprintf(stderr, "jobid = %d stepid = %d app = %s\n",
+            front.step.job_id, front.step.step_id, app.c_str());
+        )
+        SQLITE3_BIND_START;
+        NAMED_BIND_INT(application_usage_insert, ":jobid", front.step.job_id);
+        NAMED_BIND_INT(application_usage_insert, ":stepid", front.step.step_id);
+        NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
+        // pop must goes after all bindings
+        result.usages.pop();
+        if (BIND_FAILED) {
+          continue;
+        }
+        SQLITE3_BIND_END;
+        if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
+          SQLITE3_PERROR("step" OPC);
+          // do not `continue` here. let reset do its job
+        }
+        if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
+          SQLITE3_PERROR("reset" OPC);
+          continue;
+        }
+      }
     }
-    while (!result.usages.empty()) {
-      const auto &front = result.usages.front();
-      std::string app(front.app + (size_t) *result.buf);
-      DEBUGOUT(
-        fprintf(stderr, "jobid = %d stepid = %d app = %s\n",
-          front.step.job_id, front.step.step_id, app.c_str());
-      )
-      SQLITE3_BIND_START;
-      NAMED_BIND_INT(application_usage_insert, ":jobid", front.step.job_id);
-      NAMED_BIND_INT(application_usage_insert, ":stepid", front.step.step_id);
-      NAMED_BIND_TEXT(application_usage_insert, ":application", app.c_str());
-      // pop must goes after all bindings
-      result.usages.pop();
+    #undef OPC
+    #define OPC "(cpu_available_info)"
+    if (setup_stmt(jobstep_available_cpu_insert,
+                   JOBSTEP_AVAILABLE_CPU_INSERT_SQL,
+                   OPC)) {
+      SQLITE3_BIND_START
+      NAMED_BIND_INT(jobstep_available_cpu_insert, ":watcherid", watcher_id);
       if (BIND_FAILED) {
-        continue;
+        goto skip_avail_cpu_insert;
       }
-      SQLITE3_BIND_END;
-      if (sqlite3_step(application_usage_insert) != SQLITE_DONE) {
-        SQLITE3_PERROR("step" OPC);
-        // do not `continue` here. let reset do its job
+      SQLITE3_BIND_END
+      while (!result.cpu_available_info.empty()) {
+        const auto &front = result.cpu_available_info.front();
+        SQLITE3_BIND_START
+        NAMED_BIND_INT(jobstep_available_cpu_insert,
+                       ":jobid", front.step.job_id);
+        NAMED_BIND_INT(jobstep_available_cpu_insert,
+                       ":stepid", front.step.step_id);
+        NAMED_BIND_INT(jobstep_available_cpu_insert,
+                       ":ncpu", front.cpu_available);
+        if (BIND_FAILED) {
+          continue;
+        }
+        SQLITE3_BIND_END
+        result.cpu_available_info.pop();
+        DEBUGOUT(
+          fprintf(stderr, "insert: %d.%d available cpu %d\n",
+                  front.step.job_id, front.step.step_id, front.cpu_available);
+        )
+        if (sqlite3_step(jobstep_available_cpu_insert) != SQLITE_DONE) {
+          SQLITE3_PERROR("step" OPC);
+          // do not `continue` here. let reset do its job
+        }
+        if (!IS_SQLITE_OK(sqlite3_reset(jobstep_available_cpu_insert))) {
+          SQLITE3_PERROR("reset" OPC);
+          continue;
+        }
       }
-      if (!IS_SQLITE_OK(sqlite3_reset(application_usage_insert))) {
-        SQLITE3_PERROR("reset" OPC);
-        continue;
-      }
+      skip_avail_cpu_insert:;
     }
     finalize();
   }
@@ -513,8 +553,13 @@ void watcher() {
 static inline void fetch_proc_stats (
   process_tree_t &child,
   scraper_result_map_t &result,
-  stepd_step_id_map_t &stepd_pids) {
+  stepd_step_id_map_t &stepd_pids,
+  jobstep_val_map_t &jobstep_cpu_available) {
   const size_t page_size = sysconf(_SC_PAGE_SIZE);
+  const char *slurm_cgroup_mount_point
+    = getenv(SLURM_CGROUP_MOUNT_POINT_ENV);
+  const std::string slurm_cgroup_mount_point_str
+    = std::string(slurm_cgroup_mount_point ? slurm_cgroup_mount_point : "");
   char buf[READ_BUF_SIZE];
   scrape_result_t cur_result;
   memset(&cur_result, 0, sizeof(cur_result));
@@ -656,6 +701,58 @@ static inline void fetch_proc_stats (
         }
         if (found_stepid) {
           stepd_pids[pid] = step;
+          FILE *fp = NULL;
+          auto jobstep_pair = std::make_pair(step.job_id, step.step_id);
+          if (slurm_cgroup_mount_point_str.length()
+              && !jobstep_cpu_available.count(jobstep_pair)
+              && (fp = fopen((basepath + "cpuset").c_str(), "r"))) {
+            std::string cgroup_path
+              = slurm_cgroup_mount_point_str + std::string("/cpuset");
+            size_t cnt;
+            while (cnt = fread(buf, 1, READ_BUF_SIZE, fp)) {
+              buf[cnt] = '\0';
+              cgroup_path += std::string(buf);
+            }
+            cgroup_path.pop_back();
+            cgroup_path += std::string("/cpuset.effective_cpus");
+            fclose(fp);
+            fp = fopen(cgroup_path.c_str(), "r");
+            fprintf(stderr, "%s\n", cgroup_path.c_str());
+            int val[2] = {0, 0}; bool cur_side = 0; int ncpu = 0;
+            while (fp && (cnt = fread(buf, 1, READ_BUF_SIZE, fp))) {
+              buf[cnt] = '\0';
+              auto cur = buf;
+              while (cur) {
+                auto c = *cur;
+                if (c == '-') {
+                  cur_side = !cur_side;
+                } else if (c == ',' || c == '\n' || c == '\0') {
+                  if (!cur_side) {
+                    val[1] = val[0];
+                  }
+                  fprintf(stderr, "%d %d\n", val[0],val[1]);
+                  ncpu += val[1] - val[0] + 1;
+                  val[0] = val[1] = 0;
+                  cur_side = 0;
+                  if (c == '\n' || c == '\0') {
+                    break;
+                  }
+                } else {
+                  fprintf(stderr, "<%c>", c);
+                  val[cur_side] = val[cur_side] * 10 + c - '0';
+                }
+                cur++;
+              }
+            }
+            DEBUGOUT(
+              fprintf(stderr, "fetch: %d.%d available cpu %d\n",
+                      step.job_id, step.step_id, ncpu);
+            )
+            if (fp) {
+              jobstep_cpu_available.try_emplace(jobstep_pair, ncpu);
+              fclose(fp);
+            }
+          }
         }
       }
       #undef STEP_MAX_LENGTH
@@ -740,13 +837,14 @@ void scraper() {
   // again. With this luck it is suggested that you buy a lottery and share me 5
   // million if u got a jackpot :)
   std::map<pid_t/* slurmstepd_pid */, step_application_set_t> app_map;
+  jobstep_val_map_t jobstep_cpu_available;
   while (scrape_cnt-- && wait_until(timeout)) {
     timeout = time(NULL) + SCRAPE_INTERVAL;
     process_tree_t child;
     scraper_result_map_t result;
     stepd_step_id_map_t stepd_pids;
     pid_gpu_measurement_map_t pid_gpu_measurement_map;
-    fetch_proc_stats(child, result, stepd_pids);
+    fetch_proc_stats(child, result, stepd_pids, jobstep_cpu_available);
     measure_gpu_result_t gpu_result;
     std::map<uint32_t, std::vector<gpu_measurement_t *> > mapped_gpu_results;
     std::map<uint32_t, uint32_t> job_step_mapping;
@@ -831,6 +929,17 @@ void scraper() {
       }
       app_map.erase(result.pid);
     }
+  }
+  for (auto &[id, val] : jobstep_cpu_available) {
+    cpu_available_info_t info;
+    info.step.job_id = id.first;
+    info.step.step_id = id.second;
+    info.cpu_available = val;
+    DEBUGOUT(
+    fprintf(stderr, "stage: %d.%d available cpu %d\n",
+            id.first, id.second, val);
+    )
+    stage_message(info);
   }
   sendout();
 }
@@ -1118,6 +1227,8 @@ void *node_watcher_distributor(void *arg) {
   };
   const std::string db_host = get_env_str(DB_HOST_ENV, hostname);
   const std::string port_env = get_env_str(PORT_ENV, STRINGIFY(DEFAULT_PORT));
+  const std::string slurm_cgroup_mount_point_env
+    = get_env_str(SLURM_CGROUP_MOUNT_POINT_ENV, "");
   const std::string bright_cert_path_env
     = get_env_str(BRIGHT_CERT_PATH_ENV, "default");
   const std::string bright_key_path_env
@@ -1133,6 +1244,7 @@ void *node_watcher_distributor(void *arg) {
     dbenv.c_str(),
     conf_path_env.c_str(),
     libpath.c_str(),
+    slurm_cgroup_mount_point_env.c_str(),
     db_host.c_str(),
     port_env.c_str(),
     run_once_env.c_str(),

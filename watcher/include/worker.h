@@ -101,7 +101,8 @@ typedef std::map<pid_t, std::vector<gpu_measurement_t *> >
   STAT_MERGE_DST.NAME = std::max(STAT_MERGE_SRC.NAME, STAT_MERGE_DST.NAME);
 
 typedef std::map<std::pair<uint32_t /*jobid*/, uint32_t /*stepid*/>,
-                 int /*recordid*/> jobstep_recordid_map_t;
+                 int /*recordid*/> jobstep_val_map_t;
+typedef jobstep_val_map_t jobstep_recordid_map_t;
 slurmdb_job_cond_t *setup_job_cond();
 void measurement_record_insert(
   slurmdb_job_cond_t *job_cond, const jobstep_recordid_map_t &map);

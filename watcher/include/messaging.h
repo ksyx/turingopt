@@ -11,7 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-constexpr protocol_version_t protocol_version = 1;
+constexpr protocol_version_t protocol_version = 2;
 
 /*
   APPEND ONLY. DO NOT MODIFY/REMOVE OLD PROTOCOL DESCRIPTION ONCE IN PRODUCTION.
@@ -21,7 +21,7 @@ constexpr protocol_version_t protocol_version = 1;
 
   VERTICAL BARS SEPARATE SENDS
 
-  ======================== PROTOCOL VERSION 1    BEGIN =========================
+  ======================== PROTOCOL VERSION 1/2  BEGIN =========================
 
   CLIENT_MAGIC  = 0xAC1DBEEF
   SERVER_MAGIC  = 0xEAC1CAFE
@@ -32,6 +32,9 @@ constexpr protocol_version_t protocol_version = 1;
                           ~~ *result_cnt ~~
   ... continues here ... [application_usage_t(1)][uint32_t app_len(2)][app]
                          ~~~~~~~~~~~~~~~~~   *usage_cnt   ~~~~~~~~~~~~~~~~~
+  VER2 ADDITION: available_cpu_info_cnt in header_t, this follows VER 1 data
+  [    cpu_available_info_t   ]
+  ~~ *available_cpu_info_cnt ~~
 
  ... Server sends CONFIRM_MAGIC ...
 
@@ -39,7 +42,7 @@ constexpr protocol_version_t protocol_version = 1;
       first byte immediately following the structure.
   (2) length includes terminating \0, guaranteed to be less than INIT_BUF_SIZE
 
-  ======================== PROTOCOL VERSION 1    END   =========================
+  ======================== PROTOCOL VERSION 1/2  END   =========================
 */
 
 #define TASK_COMM_LEN 32
@@ -62,9 +65,15 @@ struct header_t {
   const protocol_version_t schema_ver = schema_version;
   uint32_t result_cnt;
   uint32_t usage_cnt;
+  uint32_t available_cpu_info_cnt;
   // Length includes terminating \0
   uint32_t hostname_len;
   worker_info_t worker;
+};
+
+struct cpu_available_info_t {
+  slurm_step_id_t step;
+  uint32_t cpu_available;
 };
 
 struct scrape_result_t {
@@ -113,12 +122,14 @@ struct result_group_t {
   std::queue<scrape_result_t> scrape_results;
   std::queue<application_usage_t> usages;
   std::queue<gpu_measurement_t> gpu_results;
+  std::queue<cpu_available_info_t> cpu_available_info;
 };
 
 void build_socket();
 void stage_message(gpu_measurement_t result, int queue_id = -1);
 void stage_message(scrape_result_t result, int queue_id = -1);
 void stage_message(application_usage_t usage, int queue_id = -1);
+void stage_message(cpu_available_info_t info, int queue_id = -1);
 void freeze_queue();
 bool recombine_queue(result_group_t &result);
 void sendout();

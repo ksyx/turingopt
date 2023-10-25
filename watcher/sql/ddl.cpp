@@ -105,7 +105,7 @@ END;
 CREATE TABLE IF NOT EXISTS measurements(
   recordid INTEGER PRIMARY KEY AUTOINCREMENT,
   watcherid INTEGER NOT NULL REFERENCES watcher(id) ON DELETE RESTRICT,
-  jobid INTEGER NOT NULL REFERENCES jobinfo(jobid) ON DELETE RESTRICT,
+  jobid INTEGER NOT NULL,
   stepid INTEGER,
   /* timestamp INTEGER DEFAULT(unixepoch('now')) NOT NULL, */
   /* should ORDER BY tot_time */
@@ -124,7 +124,9 @@ CREATE TABLE IF NOT EXISTS measurements(
   /* GPU utilization data could be directly updated given the entry exists */
   gpu_measurement_batch INTEGER,
   FOREIGN KEY (gpu_measurement_batch, jobid, stepid)
-    REFERENCES gpu_measurements(batch, jobid, stepid)
+    REFERENCES gpu_measurements(batch, jobid, stepid) ON DELETE RESTRICT,
+  FOREIGN KEY (jobid, stepid)
+    REFERENCES jobinfo(jobid, stepid) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS measurements_index ON measurements(tot_time);
@@ -194,7 +196,7 @@ INSERT OR IGNORE INTO analyze_user_info(user, skip) VALUES ("root", 1);
 CREATE TABLE IF NOT EXISTS scrape_freq_log_internal(
   start INTEGER PRIMARY KEY NOT NULL CHECK(start > 0),
   scrape_interval INTEGER NOT NULL CHECK(scrape_interval > 0)
-);
+) WITHOUT ROWID;
 
 CREATE VIEW IF NOT EXISTS scrape_freq_log
   AS SELECT * FROM scrape_freq_log_internal;
@@ -209,5 +211,16 @@ CREATE TRIGGER IF NOT EXISTS scrape_freq_log_insert
   ) BEGIN
   INSERT INTO scrape_freq_log_internal(start, scrape_interval)
     VALUES (NEW.start, NEW.scrape_interval);
-  END
+  END;
+
+CREATE TABLE IF NOT EXISTS job_step_cpu_available(
+  watcherid INTEGER NOT NULL REFERENCES watcher(id)
+    ON DELETE RESTRICT,
+  jobid INTEGER NOT NULL,
+  stepid INTEGER NOT NULL,
+  ncpu INTEGER NOT NULL,
+  PRIMARY KEY (watcherid, jobid, stepid),
+  FOREIGN KEY (jobid, stepid)
+    REFERENCES jobinfo(jobid, stepid) ON DELETE RESTRICT
+);
 );

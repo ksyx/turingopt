@@ -75,6 +75,11 @@ const char *UPDATE_SCRAPE_FREQ_LOG_SQL = SQLITE_CODEBLOCK(
            :scrape_interval AS scrape_interval
 );
 
+const char *JOBSTEP_AVAILABLE_CPU_INSERT_SQL = SQLITE_CODEBLOCK(
+  INSERT OR IGNORE INTO job_step_cpu_available(watcherid, jobid, stepid, ncpu)
+    VALUES(:watcherid, :jobid, :stepid, :ncpu);
+);
+
 const char *GET_SCHEMA_VERSION_SQL =
   "UPDATE worker_task_info SET schema_version ="
   "  ifnull(schema_version, " STRINGIFY(DB_SCHEMA_VERSION) ")"

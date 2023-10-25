@@ -4,6 +4,7 @@ static std::queue<scrape_result_t> scrape_result_queue[2];
 static std::queue<application_usage_t> application_usage_queue[2];
 static std::queue<header_t> header_queue[2];
 static std::queue<gpu_measurement_t> gpu_result_queue[2];
+static std::queue<cpu_available_info_t> cpu_available_info[2];
 static char *buf;
 static size_t buf_size;
 static size_t buf_used;
@@ -82,18 +83,27 @@ static inline char *stage_str(const char *str) {
   return (char *)(dest - buf);
 }
 
+static inline bool decide_queue_id(int queue_id) {
+  return queue_id == -1 ? cur : queue_id;
+}
+
 void stage_message(gpu_measurement_t result, int queue_id) {
-  bool cur_used = queue_id == -1 ? cur : queue_id;
+  bool cur_used = decide_queue_id(queue_id);
   gpu_result_queue[cur_used].push(result);
 }
 
 void stage_message(scrape_result_t result, int queue_id) {
-  bool cur_used = queue_id == -1 ? cur : queue_id;
+  bool cur_used = decide_queue_id(queue_id);
   scrape_result_queue[cur_used].push(result);
 }
 
+void stage_message(cpu_available_info_t info, int queue_id) {
+  bool cur_used = decide_queue_id(queue_id);
+  cpu_available_info[cur_used].push(info);
+}
+
 void stage_message(application_usage_t usage, int queue_id) {
-  bool cur_used = queue_id == -1 ? cur : queue_id;
+  bool cur_used = decide_queue_id(queue_id);
   usage.app = stage_str(usage.app);
   application_usage_queue[cur_used].push(usage);
 }
@@ -138,6 +148,10 @@ bool recombine_queue(result_group_t &result) {
       result.usages.push(application_usage_queue[cur].front());
       application_usage_queue[cur].pop();
     }
+    for (uint32_t i = 0; i < header.available_cpu_info_cnt; i++) {
+      result.cpu_available_info.push(cpu_available_info[cur].front());
+      cpu_available_info[cur].pop();
+    }
     result.buf = &buf;
     ret = true;
   }
@@ -163,6 +177,7 @@ static inline void takein(int from) {
   scrape_result_t result;
   gpu_measurement_t gpu_result;
   application_usage_t usage;
+  cpu_available_info_t cpu_available_info;
   uint32_t len;
   {
     size_t expected_size = sizeof(server_magic);
@@ -220,6 +235,10 @@ static inline void takein(int from) {
     usage.app = buf;
     stage_message(usage, cur_copy);
   }
+  for (uint32_t i = 0; i < header.available_cpu_info_cnt; i++) {
+    do_recv(&cpu_available_info, sizeof(cpu_available_info));
+    stage_message(cpu_available_info, cur_copy);
+  }
   finalize();
 }
 
@@ -271,6 +290,7 @@ void sendout() {
   header_t header;
   header.result_cnt = scrape_result_queue[cur].size();
   header.usage_cnt = application_usage_queue[cur].size();
+  header.available_cpu_info_cnt = cpu_available_info[cur].size();
   DEBUGOUT(
     fprintf(stderr, "send: %d %d %s\n",
       header.result_cnt, header.usage_cnt, header.worker.hostname);
@@ -334,6 +354,11 @@ void sendout() {
     do_send(&len, sizeof(len));
     do_send(app_addr, len);
     application_usage_queue[cur].pop();
+  }
+  while (!cpu_available_info[cur].empty()) {
+    const auto &front = cpu_available_info[cur].front();
+    do_send(&front, sizeof(front));
+    cpu_available_info[cur].pop();
   }
 }
 
