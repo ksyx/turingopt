@@ -27,7 +27,6 @@ const char *MEASUREMENTS_INSERT_SQL = SQLITE_CODEBLOCK(
     recordid,
     watcherid, jobid, stepid,
     dev_in, dev_out,
-    elapsed,
     user_sec, user_usec,
     sys_sec, sys_usec,
     res_size, minor_pagefault,
@@ -36,7 +35,6 @@ const char *MEASUREMENTS_INSERT_SQL = SQLITE_CODEBLOCK(
     :recordid,
     :watcherid, :jobid, :stepid,
     :dev_in, :dev_out,
-    :elapsed,
     :user_sec, :user_usec,
     :sys_sec, :sys_usec,
     :res_size, :minor_pagefault,
@@ -46,11 +44,13 @@ const char *MEASUREMENTS_INSERT_SQL = SQLITE_CODEBLOCK(
 
 const char *JOBINFO_INSERT_SQL = SQLITE_CODEBLOCK(
   INSERT OR REPLACE INTO jobinfo(
-    jobid, stepid, user, name, submit_line, timelimit, ended_at,
-    node, mem, ncpu, ngpu
+    jobid, stepid, user, name, submit_line,
+    timelimit, started_at, ended_at,
+    mem, nnodes, ncpu, ngpu
   ) VALUES (
-    :jobid, :stepid, :user, :name, :submit_line, :timelimit, :ended_at,
-    :node, :mem, :ncpu, :ngpu
+    :jobid, :stepid, :user, :name, :submit_line,
+    :timelimit, :started_at, :ended_at,
+    :mem, :nnodes, :ncpu, :ngpu
   )
 );
 
@@ -67,6 +67,12 @@ const char *GPU_MEASUREMENT_INSERT_SQL = SQLITE_CODEBLOCK(
     :watcherid, :batch, :pid, :jobid, :stepid, :gpuid, :age,
     :power_usage, :temperature, :sm_clock, :util, :clock_limit_reason, :source
   )
+);
+
+const char *UPDATE_SCRAPE_FREQ_LOG_SQL = SQLITE_CODEBLOCK(
+  INSERT INTO scrape_freq_log(start, scrape_interval)
+    SELECT (SELECT ifnull(max(recordid), 1) FROM measurements) AS start,
+           :scrape_interval AS scrape_interval
 );
 
 const char *GET_SCHEMA_VERSION_SQL =

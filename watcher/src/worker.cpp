@@ -31,17 +31,22 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
   if (!setup_stmt(jobinfo_insert, JOBINFO_INSERT_SQL, OP)) {
     return;
   }
+  tres_t tres_alloc(job->tres_alloc_str);
+  auto nnodes = tres_alloc[NODE_TRES];
+  if (!nnodes) {
+    return;
+  }
   SQLITE3_BIND_START
   #define BIND(TY, VAR, VAL) SQLITE3_NAMED_BIND(TY, jobinfo_insert, VAR, VAL);
   #define BIND_TEXT(VAR, VAL) NAMED_BIND_TEXT(jobinfo_insert, VAR, VAL);
   BIND(int, ":jobid", job->jobid);
-  tres_t tres_alloc(job->tres_alloc_str);
   BIND(int64, ":mem", tres_alloc[MEM_TRES] * 1024 * 1024);
   BIND(int, ":timelimit", job->timelimit);
+  BIND(int, ":started_at", job->start);
   BIND(int, ":ended_at", job->end);
   BIND(int, ":ncpu", tres_alloc[CPU_TRES]);
   BIND(int, ":ngpu", tres_alloc[GPU_TRES]);
-  BIND_TEXT(":node", job->nodes);
+  BIND(int, ":nnodes", nnodes);
   if (job->user) {
     BIND_TEXT(":user", job->user);
   } else if (auto info = getpwuid(job->uid)) {
@@ -76,7 +81,8 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
       BIND(int, ":stepid", step->step_id.step_id);
       BIND_TEXT(":name", step->stepname);
       BIND_TEXT(":submit_line", step->submit_line);
-      BIND_TEXT(":node", step->nodes);
+      BIND(int, ":started_at", step->start);
+      BIND(int, ":ended_at", step->end);
       if (BIND_FAILED) {
         SQLITE3_PERROR("bind" OP);
         continue;
@@ -124,9 +130,6 @@ measurement_record_insert(const measurement_rec_t &m) {
   if (m.gpu_measurement_batch) {
     BIND(int, ":gpu_measurement_batch", *m.gpu_measurement_batch);
   }
-  if (m.elapsed) {
-    BIND(int, ":elapsed", *m.elapsed);
-  }
   #define BINDTIMING(VAR) \
     BIND(int64, ":" #VAR "_sec", *m.VAR##_cpu_sec); \
     BIND(int, ":" #VAR "_usec", *m.VAR##_cpu_usec);
@@ -160,7 +163,6 @@ static inline void measurement_record_insert(
     m.recordid = NULL;
   }
   }
-  m.elapsed = &step->elapsed;
   m.dev_in = &tres_in[DISK_TRES];
   m.dev_out = &tres_out[DISK_TRES];
   m.res_size = &tres_max[MEM_TRES];
@@ -179,7 +181,6 @@ static inline void measurement_record_insert(const scrape_result_t result) {
   static const size_t clk_tck = sysconf(_SC_CLK_TCK);
   measurement_rec_t m;
   m.recordid = NULL;
-  m.elapsed = NULL;
   m.step_id = &result.step;
   m.res_size = &result.res;
   m.minor_pagefault = &result.minor_pagefault;
@@ -424,6 +425,25 @@ void measurement_record_insert(
   }
   slurm_list_iterator_destroy(job_it);
   slurm_list_destroy(job_list);
+}
+
+bool log_scraper_freq(const char *sql, const char *op) {
+  sqlite3_stmt *log_scrape_freq_stmt = NULL;
+  if (!setup_stmt(log_scrape_freq_stmt, sql, op)) {
+    return false;
+  }
+  SQLITE3_BIND_START
+  NAMED_BIND_INT(log_scrape_freq_stmt,
+                  ":scrape_interval", SCRAPE_INTERVAL);
+  if (BIND_FAILED) {
+    return false;
+  }
+  SQLITE3_BIND_END
+  if (!step_and_verify(log_scrape_freq_stmt, 0, op)) {
+    return false;
+  }
+  sqlite3_finalize(log_scrape_freq_stmt);
+  return true;
 }
 
 void watcher() {

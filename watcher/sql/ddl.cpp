@@ -60,10 +60,11 @@ CREATE TABLE IF NOT EXISTS jobinfo(
   submit_line TEXT,
 
   /* requested resources */
-  ncpu INTEGER,
-  timelimit INTEGER, ended_at INTEGER,
+  timelimit INTEGER,
+  started_at INTEGER CHECK(started_at > 0),
+  ended_at INTEGER CHECK(ended_at == 0 OR ended_at >= started_at),
   mem INTEGER,
-  node INTEGER,
+  nnodes INTEGER CHECK(nnodes > 0), ncpu INTEGER CHECK(ncpu > 0),
   ngpu INTEGER CHECK((ngpu IS NULL) IS NOT (stepid IS NULL)),
   PRIMARY KEY (jobid, stepid)
 );
@@ -113,7 +114,6 @@ CREATE TABLE IF NOT EXISTS measurements(
   dev_in INTEGER, dev_out INTEGER,
   user_sec INTEGER NOT NULL, user_usec INTEGER NOT NULL,
   sys_sec INTEGER NOT NULL, sys_usec INTEGER NOT NULL,
-  elapsed INTEGER,
   tot_time INTEGER,
     GENERATED ALWAYS
     AS (user_sec * 1e6 + user_usec + sys_sec * 1e6 + sys_usec) STORED
@@ -190,4 +190,24 @@ CREATE TABLE IF NOT EXISTS analyze_user_info(
 ) WITHOUT ROWID;
 
 INSERT OR IGNORE INTO analyze_user_info(user, skip) VALUES ("root", 1);
+
+CREATE TABLE IF NOT EXISTS scrape_freq_log_internal(
+  start INTEGER PRIMARY KEY NOT NULL CHECK(start > 0),
+  scrape_interval INTEGER NOT NULL CHECK(scrape_interval > 0)
+);
+
+CREATE VIEW IF NOT EXISTS scrape_freq_log
+  AS SELECT * FROM scrape_freq_log_internal;
+
+CREATE TRIGGER IF NOT EXISTS scrape_freq_log_insert
+  INSTEAD OF INSERT ON scrape_freq_log
+  FOR EACH ROW WHEN NOT EXISTS (
+    SELECT * FROM scrape_freq_log
+      GROUP BY 1
+      HAVING (start == max(start) AND scrape_interval == NEW.scrape_interval)
+             OR NEW.start < max(start)
+  ) BEGIN
+  INSERT INTO scrape_freq_log_internal(start, scrape_interval)
+    VALUES (NEW.start, NEW.scrape_interval);
+  END
 );

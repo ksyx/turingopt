@@ -16,9 +16,8 @@ static sqlite3_stmt *get_latest_global_measurement_for_jobsteps_stmt;
 static const char *PREPARE_MIGRATE_SQL
   = SQLITE_CODEBLOCK(
     DROP TRIGGER measurement_quality_ensurance;
+    DROP TRIGGER measurements_upd;
   );
-
-static const char *FINALIZE_MIGRATE_SQL = "";
 
 void migrate_db(int cur_version) {
   int start, end;
@@ -30,6 +29,7 @@ void migrate_db(int cur_version) {
       exit(1);
     }
   }
+  sqlite3_begin_transaction();
   #define OP "(renew_schema_version)"
   sqlite3_stmt *renew_db_schema_version_stmt = NULL;
   if (!setup_stmt(renew_db_schema_version_stmt,
@@ -40,13 +40,13 @@ void migrate_db(int cur_version) {
   step_renew(renew_db_schema_version_stmt, OP, start, end);
   reset_stmt(renew_db_schema_version_stmt, OP);
   if (start == DB_SCHEMA_VERSION) {
+    sqlite3_end_transaction();
     return;
   } else if (start > end || end != MIGRATE_TARGET_DB_SCHEMA_VERSION) {
     fputs("error: schema version unsupported by software and is not a viable"
           " migration target.\n", stderr);
     exit(1);
   }
-  sqlite3_begin_transaction();
   if (!sqlite3_exec_wrap(PREPARE_MIGRATE_SQL, "(prepare_migrate)")) {
     exit(1);
   }
@@ -56,19 +56,47 @@ void migrate_db(int cur_version) {
         " restarted after migration.\n", stderr);
   switch(start) {
     // When there is no migrate functionality at all
+    #define EXEC_SQL_AND_CHECK(OP, SQL) \
+      if (!sqlite3_exec_wrap(SQL, "(" OP ")")) { \
+        success = 0; \
+        break; \
+      }
     case 0: case 1: case 2:
     {
-      const char *MIGRATE_TO_VER_3_ALTER_TABLE_SQL = SQLITE_CODEBLOCK(
-        ALTER TABLE jobinfo ADD COLUMN ncpu INTEGER;
-        ALTER TABLE jobinfo ADD COLUMN timelimit INTEGER;
+      EXEC_SQL_AND_CHECK("migrate_alter_table_3", SQLITE_CODEBLOCK(
+        ALTER TABLE jobinfo ADD COLUMN ncpu INTEGER CHECK(ncpu > 0);
+        ALTER TABLE jobinfo ADD COLUMN timelimit INTEGER CHECK(timelimit > 0);
         ALTER TABLE jobinfo ADD COLUMN ended_at INTEGER;
         ALTER TABLE measurements ADD COLUMN elapsed INTEGER;
-      );
-      if (!sqlite3_exec_wrap(
-          MIGRATE_TO_VER_3_ALTER_TABLE_SQL, "(migrate_alter_table_3)")) {
+      ))
+    }
+    case 3:
+    {
+      EXEC_SQL_AND_CHECK("migrate_alter_table_4", SQLITE_CODEBLOCK(
+        // For a better default column order
+        ALTER TABLE jobinfo DROP COLUMN ended_at;
+        ALTER TABLE jobinfo ADD COLUMN started_at INTEGER CHECK(started_at > 0);
+        ALTER TABLE jobinfo ADD COLUMN ended_at INTEGER
+          CHECK(ended_at == 0 OR ended_at >= started_at);
+      ))
+    }
+    case 4:
+    {
+      EXEC_SQL_AND_CHECK("migrate_alter_table_5", SQLITE_CODEBLOCK(
+        // For a better default column order
+        ALTER TABLE measurements DROP COLUMN elapsed;
+        ALTER TABLE jobinfo DROP COLUMN node;
+        ALTER TABLE jobinfo ADD COLUMN nnodes INTEGER CHECK(nnodes > 0);
+      ))
+      if (!log_scraper_freq(SQLITE_CODEBLOCK(
+          INSERT INTO scrape_freq_log(start, scrape_interval)
+            VALUES(1, :scrape_interval)), "(init_scraper_freq_log)")) {
         success = 0;
         break;
       }
+    }
+    // Import from SLURM after all required schema changes are performed
+    {
       const char *op = "(get_latest_global_measurement_for_jobsteps)";
       std::vector<slurm_selected_step_t> jobids;
       slurm_selected_step_t selected_step_template;
@@ -128,14 +156,21 @@ void migrate_db(int cur_version) {
       }
       measurement_record_insert(job_cond, job_record_map);
     }
+    EXEC_SQL_AND_CHECK("backfill_global_watcherid", SQLITE_CODEBLOCK(
+      UPDATE measurements SET watcherid = target.id
+      FROM (SELECT id FROM watcher WHERE target_node IS NULL LIMIT 1) AS target
+      WHERE watcherid IS 0;
+    ));
+    #undef EXEC_SQL_AND_CHECK
   }
+  cleanup_all_stmts();
   // By reaching here it should be the same as schema for version [[end]]
   if (success) {
     fputs("Database migrated. Please rerun the software.\n", stderr);
+    sqlite3_end_transaction();
+  } else {
+    sqlite3_exec_wrap("ROLLBACK;", "rollback");
   }
-  cleanup_all_stmts();
-  sqlite3_exec_wrap(FINALIZE_MIGRATE_SQL, "(finalize_migrate)");
-  sqlite3_end_transaction();
   exit(2);
   #undef OP
 }

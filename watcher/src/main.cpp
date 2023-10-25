@@ -123,6 +123,10 @@ static inline void build_sqlite_conn() {
   migrate_db(schema_version);
   // Register watcher
   sqlite3_begin_transaction();
+  if (!log_scraper_freq(UPDATE_SCRAPE_FREQ_LOG_SQL,
+                        "(update_scraper_freq_log)")) {
+    exit(1);
+  }
   if (!renew_watcher(REGISTER_WATCHER_SQL_RETURNING_TIMESTAMPS_AND_WATCHERID)) {
     exit(1);
   }

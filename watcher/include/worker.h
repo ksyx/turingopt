@@ -21,6 +21,7 @@
 #define CPU_TRES TRES_ID("cpu")
 #define GPU_TRES TRES_ID("gres/gpu")
 #define MEM_TRES TRES_ID("mem")
+#define NODE_TRES TRES_ID("node")
 
 #define SCRAPER_JOB_NAME "turingwatch"
 #define FREQ(HOUR, MINUTE, SECOND) HOUR * 60 * 60 + MINUTE * 60 + SECOND
@@ -61,7 +62,6 @@ struct measurement_rec_t {
   const size_t *minor_pagefault; /* Optional */
   const pid_t *gpu_measurement_batch; /* Optional */
 
-  const uint32_t *elapsed; /* Optional */
   const uint64_t *sys_cpu_sec;
   const uint32_t *sys_cpu_usec;
   const uint64_t *user_cpu_sec;
@@ -108,6 +108,8 @@ void measurement_record_insert(
 
 bool build_slurmdb_conn();
 bool close_slurmdb_conn();
+
+bool log_scraper_freq(const char *sql, const char *op);
 
 #undef FREQ
 #endif
