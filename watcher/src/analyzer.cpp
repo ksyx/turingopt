@@ -332,8 +332,14 @@ void run_analysis_stmt(
       } else {
         switch (cur->type) {
           case ANALYZE_RESULT_INT:
-            fprintf(fp, met_stepid ? CENTER("%'d") : CENTER("%d"),
-                        SQLITE3_FETCH(int));
+          {
+            int val = SQLITE3_FETCH(int);
+            if (met_stepid) {
+              fprintf(fp, CENTER("%'d"), val);
+            } else {
+              fprintf(fp, ANCHOR_LINK("%s_%s", CENTER("%d")),
+                          info_machine_name_str, title_machine_name_str, val);
+            }
             break;
           case ANALYZE_RESULT_FLOAT:
             fprintf(fp, CENTER("%'.2lf"), SQLITE3_FETCH(double));

@@ -57,7 +57,9 @@ const char *summary_letter_usage[] = {
   "Internal links are heavily used in this letter and it is <b>strongly</b>"
   " advised to use them to avoid scrolling overwhelmingly. <b>All</b> text in"
   " table of contents and headers are clickable and would respectively bring"
-  " you to corresponding section or back to table of contents. Besides, all of"
+  " you to corresponding section or back to table of contents. When being lost"
+  " in result rows, click on the values of <b>Job ID</b> and you would be sent"
+  " back to section header. Besides, all of"
   " the <b>identified problems</b> and many of the <b>column headers</b> are"
   " also clickable, which could bring you to a detailed explanation of these"
   " names. <b>Please submit a feedback if anything you don't understand is not"
@@ -66,7 +68,7 @@ const char *summary_letter_usage[] = {
   " read first for getting the most out of this letter. Following many users'"
   " convention, the measurements are also aggregated by job name across the"
   " entire measurement dataset collected so far for a comprehensive overview"
-  " of job characteristic.Besides identifying problems, the raw data"
+  " of job characteristic. Besides identifying problems, the raw data"
   " contributing to identifying the problems are also included for your"
   " reference.",
   NULL
