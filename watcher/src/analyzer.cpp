@@ -97,6 +97,8 @@ void run_analysis_stmt(
   bool first_run = 0;
   auto title_machine_name = get_machine_name(title);
   const char *title_machine_name_str = title_machine_name.c_str();
+  std::string info_machine_name = get_machine_name(info->name);
+  const char *info_machine_name_str = info_machine_name.c_str();
   int sqlite_ret;
   bool has_total = 0;
   std::map<const analyze_problem_t *, int> problem_cnt;
@@ -109,8 +111,6 @@ void run_analysis_stmt(
       first_run = 1;
       if (!toc_added) {
         toc_added = 1;
-        std::string info_machine_name = get_machine_name(info->name);
-        const char *info_machine_name_str = info_machine_name.c_str();
         fprintf(header_fp,
                 "%s<td>" ANCHOR_LINK("%s", BOLD("%s")) "<ul>"
                 LISTITEM(ANCHOR_LINK("%s_metrics", "Metrics"))
@@ -140,8 +140,9 @@ void run_analysis_stmt(
           if (cur_metric->printed_name && cur_metric->help) {
             fprintf(fp, "<tr>"
                     WRAPTAG(th, CENTER("%s"))
-                    TABLECELL(ANCHORED_TAG(p, "%s", "%s")) "</tr>\n",
+                    TABLECELL(ANCHORED_TAG(p, "%s_%s", "%s")) "</tr>\n",
                     cur_metric->printed_name,
+                    info_machine_name_str,
                     cur_metric->sql_column_name,
                     cur_metric->help);
           }
@@ -156,11 +157,12 @@ void run_analysis_stmt(
               cur_problem->sql_name;
               cur_problem++) {
           fprintf(fp,
-                  "<tr>" ANCHORED_TAG(th rowspan="3", "%s", "%s")
+                  "<tr>" ANCHORED_TAG(th rowspan="3", "%s_%s", "%s")
                          WRAPTAG(th, "Cause") TABLECELL("%s") "</tr>\n"
                   "<tr>" WRAPTAG(th, "Impact") TABLECELL("%s") "</tr>\n"
                   "<tr>" WRAPTAG(th, "Solution")
                          "<td>" PARAGRAPH("%s"),
+                  info_machine_name_str,
                   cur_problem->sql_name,
                   cur_problem->printed_name,
                   cur_problem->cause,
@@ -198,11 +200,12 @@ void run_analysis_stmt(
         fputs("</table>", fp);
       }
       fprintf(header_fp,
-              LISTITEM(ANCHOR_LINK("%s", "%s", "%s")),
-              title_machine_name_str,
+              LISTITEM(ANCHOR_LINK("%s_%s", "%s", "%s")),
+              info_machine_name_str, title_machine_name_str,
               highlight ? "style=\"color: revert; font-weight: bold\"" : "",
               title);
-      fprintf(fp, SUBHEADER_TEXT("%s", "%s"), title_machine_name_str, title);
+      fprintf(fp, SUBHEADER_TEXT("%s_%s", "%s"),
+                  info_machine_name_str, title_machine_name_str, title);
       fputs("<table><tr>", fp);
       for (auto cur_metric = info->fields;
             cur_metric->sql_column_name;
@@ -219,8 +222,9 @@ void run_analysis_stmt(
         }
         if (cur_metric->printed_name) {
           if (cur_metric->help) {
-            fprintf(fp, WRAPTAG(th, ANCHOR_LINK("%s", "%s")) "\n",
-                        cur_metric->sql_column_name, cur_metric->printed_name);
+            fprintf(fp, WRAPTAG(th, ANCHOR_LINK("%s_%s", "%s")) "\n",
+                        info_machine_name_str, cur_metric->sql_column_name,
+                        cur_metric->printed_name);
           } else {
             fprintf(fp, WRAPTAG(th, "%s") "\n", cur_metric->printed_name);
           }
@@ -307,8 +311,9 @@ void run_analysis_stmt(
                   }
                   auto &info = problem_info[cur_problem];
                   problem_cnt[info]++;
-                  fprintf(fp, LISTITEM(ANCHOR_LINK("%s", "%s")),
-                          info->sql_name, info->printed_name);
+                  fprintf(fp, LISTITEM(ANCHOR_LINK("%s_%s", "%s")),
+                          info_machine_name_str, info->sql_name,
+                          info->printed_name);
                 } else {
                   fprintf(stderr, "warning: unknown problem %s\n",
                                   cur_problem.c_str());
@@ -398,13 +403,14 @@ void run_analysis_stmt(
         << " " << (has_named_problem ? "record" : "")
         << (has_named_problem && tot > 1 ? "s" : "")
         << (has_named_problem ? " in " : "")
-        << "<a href=\"#" << title_machine_name << "\" "
-          << (highlight ? "style=\"color: revert\"" : "") << ">"
+        << "<a href=\"#" << info_machine_name_str << "_" << title_machine_name
+        << "\" " << (highlight ? "style=\"color: revert\"" : "") << ">"
         << "<b>" << title_str << "</b></a>"
         << (has_named_problem ? "<ul>" : "</li>\n");
     for (const auto &[problem, cnt] : problem_cnt) {
       out << "<li>" << cnt << " entr" << (cnt == 1 ? "y has" : "ies have")
-          << " problem <a href=\"#" << problem->sql_name << "\">"
+          << " problem <a href=\"#"
+          << info_machine_name_str << "_" << problem->sql_name << "\">"
           << "<b>" << problem->printed_name << "</b></a>\n";
     }
     if (has_named_problem) {
