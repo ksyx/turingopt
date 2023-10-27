@@ -32,6 +32,7 @@ typedef struct analyze_problem_t {
   const char *cause;
   const char *impact;
   const char *solution;
+  const char *oneliner;
   enum analyze_problem_solution_t solution_type;
 };
 

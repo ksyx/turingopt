@@ -14,8 +14,14 @@ const char *PRE_ANALYZE_SQL = SQLITE_CODEBLOCK(
   BEGIN TRANSACTION;
 );
 
+#define SLURM_STYLE_TIME(VAR) \
+  "ltrim((CAST(strftime('%Y', " #VAR ", 'unixepoch') AS INTEGER) - 1970)" \
+  "      || '-', '0-')" \
+  "|| (CAST(strftime('%j', " #VAR ", 'unixepoch') AS INTEGER) - 1)" \
+  "|| strftime('-%H:%M:%S', " #VAR ", 'unixepoch') "
+
 const char *ANALYZE_CREATE_BASE_TABLES[] = {
-  SQLITE_CODEBLOCK(
+  /*[0]*/SQLITE_CODEBLOCK(
   CREATE TABLE inmem.measurements AS
     SELECT measurements.*, mem AS mem_limit,
            max(recordid) OVER win AS latest_recordid
@@ -25,7 +31,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND measurements.watcherid == watcher.id
           AND measurements.jobid == jobinfo.jobid
     WINDOW win AS (PARTITION BY measurements.jobid, measurements.stepid);
-  ), SQLITE_CODEBLOCK(
+  ), /*[1]*/SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.timeseries AS
     WITH grouped_measurements AS MATERIALIZED (
@@ -57,7 +63,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         started_at - first_value(started_at) OVER win AS step_start_offset,
         ended_at - first_value(started_at) OVER win AS step_end_offset,
         first_value(ended_at - started_at) OVER win AS job_length,
-        ifnull(timelimit, first_value(timelimit) OVER win) AS timelimit
+        ifnull(timelimit, first_value(timelimit) OVER win) AS timelimit,
+        peak_res_size
       FROM jobinfo
       WHERE user IS NULL OR user IS :user
     WINDOW win AS (PARTITION BY jobid ORDER BY stepid NULLS FIRST)
@@ -90,10 +97,10 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         grouped_measurements.stepid,
         measurement_batch
     );
-  ), SQLITE_CODEBLOCK(
+  ),/*[2]*/SQLITE_CODEBLOCK(
 
   DELETE FROM inmem.measurements;
-  ), SQLITE_CODEBLOCK(
+  ), /*[3]*/SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.sys_ratio AS
     WITH systime_ratio_base AS MATERIALIZED (
@@ -129,7 +136,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       sys_ratio_1_3 + sys_ratio_2_3 * 2 + sys_ratio_gt_1 * 3
         AS major_ratio_unified_tot
       FROM systime_ratio_base;
-  ), SQLITE_CODEBLOCK(
+  ), /*[4]*/SQLITE_CODEBLOCK(
   
   CREATE TABLE inmem.gpu_usage_base AS
     WITH gpu_usage_base AS MATERIALIZED (
@@ -193,6 +200,116 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       FROM gpu_usage_base, watcher
       WHERE watcher.id == watcherid
       GROUP BY gpu_usage_base.jobid, gpu_usage_base.stepid, target_node, gpuid;
+), /*[5]*/ SQLITE_CODEBLOCK(
+
+  CREATE TABLE inmem.resource_usage AS
+  SELECT ts.jobid, ts.stepid, name,
+        format('[%.2lf%%, %.2lf%%]',
+                (1.0 * step_start_offset) / job_length * 100,
+                (1.0 * step_end_offset) / job_length * 100) AS timespan,
+        NULL AS ncpu, NULL AS cpu_usage, ngpu, gpu_usage,
+        peak_res_size, mem_limit, sample_cnt,
+        rtrim(iif(is_jupyter, 'jupyter | ', '')
+              || iif(peak_res_size > mem_limit, 'oversubscribe | ', '')
+              || iif(gpu_flagged, 'gpu_underusage', '')
+              , '| ') AS problem
+  FROM (SELECT
+    jobid, stepid, name, submit_line, job_length, ngpu,
+    step_start_offset, step_end_offset, mem_limit,
+    count(recordid) AS sample_cnt,
+    max(peak_res_size, max(res_size)) AS peak_res_size
+    FROM inmem.timeseries
+    GROUP BY jobid, stepid
+    ) AS ts, (
+    SELECT jobid, stepid,
+          iif(ngpu == 0, '',
+              group_concat(node || ' (' || node_tot || ' sample'
+                            || iif(node_tot > 1, 's', '') || ')' || x'0a'
+                            || gpu_usage, x'0a0a'))
+            AS gpu_usage,
+          count(node) AS nnode,
+          max(gpu_flagged) AS gpu_flagged
+    FROM (
+    SELECT
+      *,
+      ' ngpu' || x'0a' || 'inuse percentage' || x'0a' ||
+      group_concat(format('%5d %6.2lf%%',
+                          ngpu_in_use, (1.0 * cnt)/node_tot * 100, cnt),
+                  x'0a')
+        AS gpu_usage,
+      ngpu > 0 AND
+      (first_value(ngpu_in_use) OVER win == 0
+        OR first_value(cnt) OVER win != max(cnt)
+        OR (alloc_nnodes == 1 AND first_value(ngpu_in_use) OVER win != ngpu))
+      AS gpu_flagged
+    FROM (
+    SELECT DISTINCT ts.jobid, ts.stepid,
+          target_node AS node, ngpu_in_use, count(*) OVER win AS cnt,
+          count(*) OVER win_super AS node_tot, ts.ngpu, nnodes AS alloc_nnodes
+    FROM inmem.timeseries AS ts, watcher,
+        (SELECT batch, count(gpuid) AS ngpu_in_use
+          FROM gpu_measurements GROUP BY batch
+          UNION SELECT NULL, 0)
+    WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
+          AND ts.latest_recordid > :offset_start
+          AND ts.latest_recordid <= :offset_end
+    WINDOW win AS (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
+          win_super AS (PARTITION BY ts.jobid, ts.stepid, target_node)
+    )
+    GROUP BY jobid, stepid, node
+    WINDOW win AS
+      (PARTITION BY jobid, stepid, node ORDER BY ngpu_in_use DESC NULLS LAST)
+    )
+    GROUP BY jobid, stepid
+  ) AS gpuinfo, (
+    SELECT jobid, stepid,
+          max(application IN ('jupyter-notebook', 'jupyter-lab')) AS is_jupyter
+    FROM application_usage
+    GROUP BY jobid, stepid
+  ) AS jupyterinfo
+  WHERE gpuinfo.jobid == ts.jobid AND gpuinfo.stepid == ts.stepid
+        AND jupyterinfo.jobid == ts.jobid AND jupyterinfo.stepid == ts.stepid;
+), /*[6]*/
+    "INSERT INTO inmem.resource_usage("
+    "jobid, stepid, name, peak_res_size, mem_limit, timespan, ncpu, cpu_usage,"
+    "problem)"
+    "SELECT jobid, NULL AS stepid, name, 0, 0,"
+    "format('%.2lf%% of timelimit used', 1.0 * elapsed / timelimit * 100)"
+    " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(elapsed)
+    " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(timelimit) "AS timespan,"
+    "ncpu, format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
+    " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(actual_cpu)
+    " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(cpu_possible)
+    " || x'0a' "
+    " || format('percentage: %.2lf%%', 1.0 * actual_cpu / cpu_possible * 100)"
+    "AS cpu_usage,"
+  SQLITE_CODEBLOCK(
+    rtrim(iif(1.0 * actual_cpu / cpu_possible < 0.5,
+                    'cpu_underusage | ', '')
+                /*|| iif(1.0 * elapsed / timelimit < 0.75,
+                      'timelimit_underusage | ', '')*/
+                , '| ') AS problem
+    FROM (
+    WITH jobids AS MATERIALIZED
+      (SELECT DISTINCT jobid FROM inmem.resource_usage)
+    SELECT jobids.jobid, name, timelimit * 60 AS timelimit,
+          ncpu, tot_time / 1e6 AS actual_cpu,
+          ended_at - started_at AS elapsed,
+          (ended_at - started_at) * ncpu AS cpu_possible
+    FROM jobinfo, jobids,
+        (SELECT t.jobid, max(tot_time) AS tot_time FROM (
+            SELECT t.jobid, sum(t.tot_time) AS tot_time FROM (
+              SELECT jobid, max(tot_time) AS tot_time
+              FROM measurements
+              GROUP BY jobid, stepid
+            ) AS t GROUP BY t.jobid
+            UNION SELECT DISTINCT jobid, 0 FROM jobids
+          ) AS t GROUP BY t.jobid
+          ) AS tot_time_info
+    WHERE jobinfo.stepid IS NULL
+          AND jobinfo.jobid == jobids.jobid
+          AND jobinfo.jobid == tot_time_info.jobid
+    )
 ), 0};
 
 #define _FILTER_LATEST_RECORD_SQL \
@@ -279,6 +396,31 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
 #undef _FILTER_LATEST_RECORD_SQL
 
 #undef _PROBLEMATIC_SYS_RATIO_CONDITION
+
+const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
+  SELECT agg_jobid AS jobid, stepid, name,
+         :offset_end - :offset_start AS unused,
+         agg_sample_cnt AS sample_cnt,
+         format('%d / %d MB (%.2lf%%)',
+                agg_peak_res_size / 1024 / 1024,
+                agg_mem_limit / 1024 / 1024,
+                1.0 * agg_peak_res_size / agg_mem_limit * 100)
+         AS mem_usage, timespan, ncpu, cpu_usage, ngpu, gpu_usage,
+         rtrim(iif(agg_peak_res_size < 0.75 * agg_mem_limit,
+                      'mem_underusage | ', '')
+               || problem, '| ') AS problem_tag
+  FROM (
+    SELECT *, iif(stepid IS NULL, jobid, NULL) AS agg_jobid,
+          ifnull(sample_cnt, total(sample_cnt) OVER win) AS agg_sample_cnt,
+          iif(stepid IS NULL, max(peak_res_size) OVER win, peak_res_size)
+            AS agg_peak_res_size,
+          iif(stepid IS NULL, max(mem_limit) OVER win, mem_limit)
+            AS agg_mem_limit
+    FROM inmem.resource_usage AS usage
+    WINDOW win AS (PARTITION BY usage.jobid)
+    ORDER BY usage.jobid, stepid NULLS FIRST
+  );
+);
 
 const char *POST_ANALYZE_SQL = SQLITE_CODEBLOCK(
   ROLLBACK;

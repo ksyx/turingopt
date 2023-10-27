@@ -100,6 +100,129 @@ const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
 
 #undef STRINGIFY_BLOCK
 
+const struct analyze_result_field_t resource_usage_fields[] = {
+  job_info_fields,  {
+    .sql_column_name = "unused",
+    .printed_name = NULL,
+    .help = NULL
+  }, {
+    .sql_column_name = "sample_cnt",
+    .printed_name = "Sample Amount",
+    .help = "Amount of samples collected to produce this result row.",
+    .type = ANALYZE_RESULT_INT,
+    .flags = ANALYZE_FIELD_NO_FLAG,
+  }, {
+    .sql_column_name = "mem_usage",
+    .printed_name = "Memory Usage",
+    .help = NULL,
+    .type = ANALYZE_RESULT_STR,
+    .flags = ANALYZE_FIELD_NO_FLAG,
+  }, {
+    .sql_column_name = "timespan",
+    .printed_name = "Timespan",
+    .help = "The timing of result row relative to parent constraint. It"
+            " compares allocated time and actual consumption for jobs, and"
+            " shows the timing of steps relative to the time window of their"
+            " parent jobs. For example, a result of [25%, 75%] for a step shows"
+            " that the step started after a quarter of the job's actual time"
+            " consumption has elapsed, while ends after running for as long as"
+            " half of the job's actual time consumption.",
+    .type = ANALYZE_RESULT_STR,
+  }, {
+    .sql_column_name = "ncpu",
+    .printed_name = "CPU Count",
+    .help = NULL,
+    .type = ANALYZE_RESULT_INT,
+    .flags = ANALYZE_FIELD_NO_FLAG,
+  }, {
+    .sql_column_name = "cpu_usage",
+    .printed_name = "CPU Util",
+    .help = "The amount of CPU cores used is an average calculated from "
+            " aggregated CPU time and actual time consumption and does not show"
+            " peak usage.",
+    .type = ANALYZE_RESULT_STR,
+  }, {
+    .sql_column_name = "ngpu",
+    .printed_name = "GPU Count",
+    .help = NULL,
+    .type = ANALYZE_RESULT_INT,
+    .flags = ANALYZE_FIELD_NO_FLAG,
+  }, {
+    .sql_column_name = "gpu_usage",
+    .printed_name = "GPU Util",
+    .help = "The GPU usage information is derived from sampled data and may not"
+            " represent the full picture.",
+    .type = ANALYZE_RESULT_STR,
+  }, problem_field,
+  tail_field
+};
+
+const struct analyze_problem_t analyze_resource_usage_problems[] = {
+  {
+    .sql_name = "jupyter",
+    .printed_name = "Jupyter Detected",
+    .cause = "Your job submission involves starting your own Jupyter Notebook"
+             " or Jupyter Hub on compute nodes.",
+    .impact = "The interactive nature of Jupyter applications create"
+              " <b>excessive</b>amount of idle time that could otherwise be"
+              " allocated to other jobs and achieve higher utilization.",
+    .solution = "Please refer to NEWS section and use the shared Jupyter Hub"
+                " instance that has more fancy features than Jupyter Notebook,"
+                " separates web server from compute jobs, and creates job on "
+                " demand to ensure higher resource utilization.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+  }, {
+    .sql_name = "oversubscribe",
+    .printed_name = "Memory Oversubscribe",
+    .cause = "The job submission used more memory than allocated.",
+    .impact = "This puts the job at <b>risk of out of memory kills</b> that may"
+              " lose results that are not saved to disk, through which wasted"
+              " wasted computations are also created.",
+    .solution = "Specify larger amount of memory in allocation request.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+  }, {
+    .sql_name = "gpu_underusage",
+    .printed_name = "GPU Underusage",
+    .cause = "Resources allocated is not fully used.",
+    .impact = "Generally, this <b>increases the difficulty</b> for the request"
+              " to be satisfied, while also keeps unused resources unavailable"
+              " to other jobs for the length of job and therefore lengthen the"
+              " queue. Remember sometimes your other jobs could also be in the"
+              " queue waiting for resources! <b>The combined result of zero GPU"
+              " utilization and low amount of average CPU cores would bring the"
+              " submission to be running at extremely poor performance.</b>",
+    .solution = "Adjust allocation request with refering to the usage info"
+                " provided.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+  }, {
+    .sql_name = "cpu_underusage",
+    .printed_name = "CPU Underusage",
+    .oneliner = "Refer to GPU Underusage section above.",
+  }, {
+    .sql_name = "mem_underusage",
+    .printed_name = "Memory Underusage",
+    .oneliner = "Refer to GPU Underusage section above.",
+  }, {
+    .sql_name = "timelimit_underusage",
+    .printed_name = "Time Limit Underusage",
+    .oneliner = "Refer to GPU Underusage section above.",
+  },
+  tail_problem
+};
+
+ANALYSIS(resource_usage_analysis) = {
+  .name = "Resource Usage",
+  .fields = resource_usage_fields,
+  .problems = analyze_resource_usage_problems,
+  .analysis_description
+    = "This analysis identifies resource allocation misuses for you to set"
+      " allocation request parameters that better fits the actual need and"
+      " benefit the submission by having requests allocated faster or lowering"
+      " the risk of having the jobs killed by using more resources than"
+      " allocated.",
+  .headers_description = NULL
+};
+
 const struct analyze_result_field_t sys_ratio_fields[] = {
   job_info_fields, {
     .sql_column_name = "tot_in_batch",
@@ -324,6 +447,7 @@ ANALYSIS(gpu_usage_analysis) = {
 #undef ANALYSIS
 
 struct analysis_info_t * const analysis_list[] = {
+  &resource_usage_analysis,
   &gpu_usage_analysis,
   &sys_ratio_analysis,
   NULL
@@ -340,7 +464,7 @@ void fill_analysis_list_sql() {
     NAME.latest_analysis_sql = LATEST_SQL; \
     NAME.latest_problem_sql = PROBLEM_SQL; \
     NAME.history_analysis_sql = HISTORY_SQL;
-
+  FILL(resource_usage_analysis, NULL, ANALYZE_RESOURCE_USAGE_SQL, NULL)
   FILL(gpu_usage_analysis,
        NULL,
        ANALYZE_LATEST_GPU_USAGE_SQL,

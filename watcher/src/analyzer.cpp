@@ -156,45 +156,50 @@ void run_analysis_stmt(
         for (auto cur_problem = info->problems;
               cur_problem->sql_name;
               cur_problem++) {
-          fprintf(fp,
-                  "<tr>" ANCHORED_TAG(th rowspan="3", "%s_%s", "%s")
-                         WRAPTAG(th, "Cause") TABLECELL("%s") "</tr>\n"
-                  "<tr>" WRAPTAG(th, "Impact") TABLECELL("%s") "</tr>\n"
-                  "<tr>" WRAPTAG(th, "Solution")
-                         "<td>" PARAGRAPH("%s"),
-                  info_machine_name_str,
-                  cur_problem->sql_name,
-                  cur_problem->printed_name,
-                  cur_problem->cause,
-                  cur_problem->impact,
-                  cur_problem->solution);
-          {
-            const char *solution_str = NULL;
-            switch (cur_problem->solution_type) {
-              case ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM:
-                solution_str = "checking your code and allocation request"
-                               " parameters.";
-                break;
-              case ANALYZE_SOLUTION_TYPE_NEED_PROFILING:
-                if (profiling_support_instructions) {
-                  solution_str = profiling_support_instructions;
+          fprintf(fp, "<tr>" ANCHORED_TAG(th %s, "%s_%s", "%s"),
+                      cur_problem->oneliner ? "" : "rowspan=\"3\"",
+                      info_machine_name_str,
+                      cur_problem->sql_name,
+                      cur_problem->printed_name,
+                      "");
+          if (!cur_problem->oneliner) {
+            fprintf(fp, WRAPTAG(th, "Cause") TABLECELL("%s") "</tr>\n"
+                        "<tr>" WRAPTAG(th, "Impact") TABLECELL("%s") "</tr>\n"
+                        "<tr>" WRAPTAG(th, "Solution") "<td>" PARAGRAPH("%s"),
+                    cur_problem->cause,
+                    cur_problem->impact,
+                    cur_problem->solution);
+            {
+              const char *solution_str = NULL;
+              switch (cur_problem->solution_type) {
+                case ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM:
+                  solution_str = "checking your code and allocation request"
+                                " parameters.";
                   break;
-                } else {
-                  solution_str = "profiling your code. Request a consultation"
-                                 " session for more information.";
-                }
-                break;
-              case ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION:
-                solution_str = "requesting a consultation session if needed.";
-                break;
+                case ANALYZE_SOLUTION_TYPE_NEED_PROFILING:
+                  if (profiling_support_instructions) {
+                    solution_str = profiling_support_instructions;
+                    break;
+                  } else {
+                    solution_str = "profiling your code. Request a consultation"
+                                  " session for more information.";
+                  }
+                  break;
+                case ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION:
+                  solution_str = "requesting a consultation session if needed.";
+                  break;
+              }
+              if (solution_str) {
+                fprintf(fp, PARAGRAPH("This problem could be solved by %s"),
+                        solution_str);
+              } else {
+                fputs("warning: unknown solution type.\n", stderr);
+              }
+              fputs("</td></tr>\n", fp);
             }
-            if (solution_str) {
-              fprintf(fp, PARAGRAPH("This problem could be solved by %s"),
-                      solution_str);
-            } else {
-              fputs("warning: unknown solution type.\n", stderr);
-            }
-            fputs("</td></tr>\n", fp);
+          } else {
+            fprintf(fp, TABLECELL(PARAGRAPH("%s"), COLSPAN(2)) "</tr>",
+                        cur_problem->oneliner);
           }
         }
         fputs("</table>", fp);
@@ -255,6 +260,7 @@ void run_analysis_stmt(
       }
       bool is_percentage = cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE;
       bool met_stepid = 0;
+      bool is_null_data = SQLITE3_IS_NULL();
       if (!cur->printed_name) {
         goto finalize_table_row_loop;
       }
@@ -268,16 +274,18 @@ void run_analysis_stmt(
                   has_total && !is_percentage ? " rowspan=\"3\"" : "");
       if (cur->flags & ANALYZE_FIELD_STEP_ID) {
         met_stepid = 1;
-        int id = SQLITE3_FETCH(int);
-        #include "def/slurm_stepid.inc"
-        auto cur_id = slurm_stepid_mapping;
-        while (cur_id->name && cur_id->stepid != id) {
-          cur_id++;
+        if (!is_null_data) {
+          int id = SQLITE3_FETCH(int);
+          #include "def/slurm_stepid.inc"
+          auto cur_id = slurm_stepid_mapping;
+          while (cur_id->name && cur_id->stepid != id) {
+            cur_id++;
+          }
+          if (cur_id->name) {
+            fprintf(fp, "%s", cur_id->name);
+          } else {
+            fprintf(fp, "%d", id);
         }
-        if (cur_id->name) {
-          fprintf(fp, "%s", cur_id->name);
-        } else {
-          fprintf(fp, "%d", id);
         }
       } else if (cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE
                  && cur->type != ANALYZE_RESULT_STR) {
@@ -329,7 +337,7 @@ void run_analysis_stmt(
         if (!first) {
           fputs("</ul>", fp);
         }
-      } else {
+      } else if (!is_null_data) {
         switch (cur->type) {
           case ANALYZE_RESULT_INT:
           {
@@ -534,9 +542,13 @@ void do_analyze() {
       }
       auto &stmt = create_base_table_stmt[i];
       setup_stmt(stmt, *cur_stmt, OP);
-      if (i <= 1) {
+      if (i <= 1 || i == 5) {
         SQLITE3_BIND_START
-        NAMED_BIND_TEXT(stmt, ":user", user);
+        if (i <= 1) {
+          NAMED_BIND_TEXT(stmt, ":user", user);
+        } else if (i == 5) {
+          BIND_OFFSET(stmt);
+        }
         if (BIND_FAILED) {
           SQLITE3_PERROR("bind" OP);
           post_analyze();
