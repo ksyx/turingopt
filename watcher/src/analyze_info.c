@@ -95,10 +95,6 @@ const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
   code {
     white-space: pre;
   }
-  span[class="x_field_help"] {
-    text-decoration: underline;
-    text-decoration-style: dotted;
-  }
   </style>
 );
 
@@ -160,13 +156,13 @@ const struct analyze_problem_t analyze_sys_ratio_problems[] = {
               " or certain device operation to be done while being counted"
               " toward system time. High ratio may indicate a bottleneck of the"
               " submitted job.",
-    .impact = "Given the nature of system time, it is less helpful for"
-              " progressing the actual computation and should be reduced to"
+    .impact = "Given the nature of system time, it is <b>less helpful for"
+              " progressing the actual computation</b> and should be reduced to"
               " improve the overall computing efficiency.",
     .solution = "Since system time is highly coupled with the architecture"
-                " behind, it is suggested to submit your job for profiling."
-                " This should be low effort and would be beneficial to cluster"
-                " users including you.",
+                " behind, it is suggested to <b>submit your job for profiling"
+                "</b>. This should be <b>low effort</b> and would be beneficial"
+                " to both you and other cluster users.",
     .solution_type = ANALYZE_SOLUTION_TYPE_NEED_PROFILING
   }, tail_problem
 };
@@ -176,8 +172,8 @@ ANALYSIS(sys_ratio_analysis) = {
   .fields = sys_ratio_fields,
   .problems = analyze_sys_ratio_problems,
   .analysis_description
-    = "This analysis identifies job submissions that are likely to be less"
-      " computationally effective but may not have been captured by other"
+    = "This analysis identifies job submissions that are likely to be <b>less"
+      " computationally effective</b> but may not have been captured by other"
       " analysis, possibly due to problems that are not previously identified"
       " and therefore have no specific rules set up, or those that could not be"
       " determined with available metrics.",
@@ -205,8 +201,8 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
   }, {
     .sql_column_name = "avg_util",
     .printed_name = "Average Util / %",
-    .help = "Consider lowering GPU constraint or using partial GPU in case of"
-            " low average utilization for easier allocation and saving energy,"
+    .help = "Consider lowering GPU constraint or using lower GPU specification"
+            " when in low utilization for easier allocation and energy saving,"
             " or specifying better GPU in case of high average utilization to"
             " get job done faster.",
     .type = ANALYZE_RESULT_FLOAT,
@@ -239,7 +235,7 @@ const struct analyze_result_field_t gpu_usage_fields[] = {
     .flags = ANALYZE_FIELD_NO_FLAG,
   }, {
     .sql_column_name = "avg_power_usage",
-    .printed_name = "Average Power Usage (Watt)",
+    .printed_name = "Average Power Usage (Watts)",
     .help = "Average power usage provided for understanding environmental"
             " impact. As a reference, GPUs typically use 10 Watts when in"
             " idle. This does not take external power consumption into"
@@ -255,48 +251,47 @@ const struct analyze_problem_t analyze_gpu_problems[] = {
   {
     .sql_name = "completely_no_util",
     .printed_name = "Completely No Util",
-    .cause = "The submission is never observed to be utilizing GPU resource",
+    .cause = "The submission is <b>never</b> observed to be utilizing GPU.",
     .impact = "This causes unnecessary energy consumption by waking GPU from"
-              " idle mode and possibly heavy computing with low amount of CPU"
-              " that would take even longer to complete than in a pure CPU"
-              " submission. It would also block other jobs from utilizing the"
-              " resources for equally long time and stress the queue.",
-    .solution = "Check for documentation to ensure the computation is using"
-                " GPU.",
+              " idle mode. In addition, it possibly performed heavy computing"
+              " with less CPU, which would take <b>even longer</b> to complete"
+              " than a pure CPU submission. It would also block other jobs from"
+              " using the device for equally long time and stress the queue.",
+    .solution = "Check for code and documentation to ensure the computation is"
+                " using GPU.",
     .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
   }, {
     .sql_name = "try_split",
     .printed_name = "Try Splitting",
     .cause = "This submission is having a high percentage of longest zero"
             " utilization, indicating that there possibly exists segment of"
-            " code that is running for long time while not utilizing any GPU"
-            " resources.",
+            " code that is <b>running for long time while not utilizing any GPU"
+            " resource</b>.",
     .impact = "Allocations without GPU is generally faster to be allocated so"
               " that the preparation work for computing with GPU could be"
-              " performed during peak time of GPU usage while making SLURM"
-              " aware of the GPU usage happening later."
-              " This could also allow wasted GPU cycles to be used on"
-              " other jobs and utilize energy better, while also helps the"
-              " queue to progress faster and shorten the turnaround time"
+              " performed while waiting for allocation during peak time of GPU"
+              " usage. This could also allow wasted GPU cycles to be used on"
+              " other jobs and <b>utilize energy better</b>, while also helps"
+              " the queue to progress faster and shorten the turnaround time"
               " waiting for a GPU. Remember your task could be the one waiting"
               " for GPU next time so let's be involved in this optimization!",
     .solution = "Identify code segments running long while utilizing no GPU and"
                 " split execution into tasks requesting GPU and no GPU. The"
                 " task depedency could be set while submitting jobs with"
-                " argument <code>--dependency=afterok:jobid</code>. Use"
+                " argument <code>--dependency=afterok:(jobid)</code>. Use"
                 " accurate time limit for smooth transition from one job to"
                 " another.",
     .solution_type = ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION
   }, {
     .sql_name = "investigate_usage",
     .printed_name = "Investigate GPU Usage",
-    .cause = "This submission is observed to be utilizing GPU but in a low"
-             " utilization for long period. This possibly indicates"
-             " inefficacies in GPU usage like bottlenecks in the pipeline"
-             " moving data to GPU, or the computation is short enough that GPUs"
-             " of lower specification or parallized pure CPU computation would"
-             " fulfill the need while being easier to be allocated and uses"
-             " less energy.",
+    .cause = "This submission is observed to be utilizing GPU but in a <b>low"
+             " utilization for long period</b>. This possibly indicates"
+             " <b>inefficacies in GPU</b> usage, like bottlenecks in the"
+             " pipeline moving data to GPU, or the computation is light enough"
+             " that GPUs of lower specification or parallized pure CPU"
+             " computation would fulfill the need while being easier to be "
+             " allocated and uses less energy.",
     .impact = "Checking for bottlenecks could help the submission to complete"
               " in a faster and more efficient manner. Choosing appropriate"
               " resource combination reliefs unnecessary constraints, so that"
@@ -316,13 +311,11 @@ ANALYSIS(gpu_usage_analysis) = {
   .fields = gpu_usage_fields,
   .problems = analyze_gpu_problems,
   .analysis_description
-    = "This analysis helps making submissions' GPU usage condition more"
-      " observable and makes suggestions on requesting GPU resource so to"
+    = "This analysis helps making submissions' <b>GPU usage condition more"
+      " observable</b> and makes suggestions on requesting GPU resource so to"
       " shorten allocation turnaround time, make allocations better utilized,"
       " and save energy.",
-  .headers_description
-    = "The percentages shows the number of sampled time slices satisfying the"
-      " condition for respective columns."
+  .headers_description = NULL
 };
 
 #undef job_info_fields

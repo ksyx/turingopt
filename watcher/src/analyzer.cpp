@@ -122,12 +122,12 @@ void run_analysis_stmt(
         fprintf(fp, HEADER_TEXT("%s", "%s") "\n" PARAGRAPH("%s"),
                     info_machine_name_str, info->name,
                     info->analysis_description);
-        fprintf(fp,
-                SUBHEADER_TEXT("%s_metrics", "Metrics") "\n"
-                PARAGRAPH("%s") "\n"
-                "<table>",
-                info_machine_name_str,
-                info->headers_description);
+        fprintf(fp, SUBHEADER_TEXT("%s_metrics", "Metrics") "\n",
+                info_machine_name_str);
+        if (info->headers_description) {
+          fprintf(fp, PARAGRAPH("%s")"\n", info->headers_description);
+        }
+        fputs("<table>", fp);
         for (auto cur_metric = info->fields;
              cur_metric->sql_column_name;
              cur_metric++) {
@@ -341,14 +341,15 @@ void run_analysis_stmt(
                           info_machine_name_str, title_machine_name_str, val);
             }
             break;
+          }
           case ANALYZE_RESULT_FLOAT:
             fprintf(fp, CENTER("%'.2lf"), SQLITE3_FETCH(double));
             break;
           case ANALYZE_RESULT_STR:
             {
               const char *str = (const char *)SQLITE3_FETCH_STR();
-              bool multiline = strchr(str, '\n');
-              fprintf(fp, "%s" WRAPTAG(code, "%s") "%s",
+              bool multiline = str ? strchr(str, '\n') : 0;
+              fprintf(fp, "%s" WRAPTAG(pre, WRAPTAG(code, "%s")) "%s",
                           multiline ? "" : "<center>",
                           str,
                           multiline ? "" : "</center>");

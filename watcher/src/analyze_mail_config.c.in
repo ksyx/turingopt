@@ -4,7 +4,7 @@
 
 const char *analyze_news = "We have fancy summary letters being sent out!";
 #define ANALYZE_MAIL_CONTACT "Admin <webmaster@example.com.localhost>"
-// Automatically prefixed with word by for consistency with other phrasing
+// Automatically prefixed with word 'by' for consistency with other phrasing
 const char *profiling_support_instructions
   = "contacting <a href=\"mailto:"
     "ProfilingSupport <beprofiled@example.com.localhost>"
@@ -27,11 +27,12 @@ const char *analyze_letter_feedback_link
 const char *analyze_letter_domain = "example.com.localhost";
 const char *analyze_letter_subject = "HPC Cluster Usage Summary";
 const char *analyze_letter_header
-  = "Hi,\n"
-    "Please check out your cluster usage summary:";
+  = "<p>Hi,</p>"
+    "<p>Please check out your cluster usage summary:</p>";
 const char *analyze_letter_footer
-  = "To unsubscribe, please contact"
-    " <a href=\"mailto:" ANALYZE_MAIL_CONTACT "\">us</a>.\n"
+  = "<p>You are receiving this email because you have recently submitted jobs"
+    " to the cluster. To unsubscribe, please contact"
+    " <a href=\"mailto:" ANALYZE_MAIL_CONTACT "\">us</a>.</p>\n"
     "<hr>"
     "HPC Admin Team";
 #undef ANALYZE_MAIL_CONTACT
