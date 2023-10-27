@@ -80,11 +80,13 @@ static void jobinfo_record_insert(slurmdb_job_rec_t *job) {
     ListIterator step_it = slurm_list_iterator_create(job->steps);
     while (const auto step = (slurmdb_step_rec_t *) slurm_list_next(step_it)) {
       SQLITE3_BIND_START
+      tres_t step_max_usage(step->stats.tres_usage_in_max);
       BIND(int, ":stepid", step->step_id.step_id);
       BIND_TEXT(":name", step->stepname);
       BIND_TEXT(":submit_line", step->submit_line);
       BIND(int, ":started_at", step->start);
       BIND(int, ":ended_at", step->end);
+      BIND(int64, ":peak_res_size", step_max_usage[MEM_TRES]);
       if (BIND_FAILED) {
         SQLITE3_PERROR("bind" OP);
         continue;

@@ -95,6 +95,10 @@ void migrate_db(int cur_version) {
         break;
       }
     }
+    case 5:
+    EXEC_SQL_AND_CHECK("migrate_alter_table_6", SQLITE_CODEBLOCK(
+      ALTER TABLE jobinfo ADD COLUMN peak_res_size INTEGER;
+    ))
     // Import from SLURM after all required schema changes are performed
     {
       const char *op = "(get_latest_global_measurement_for_jobsteps)";

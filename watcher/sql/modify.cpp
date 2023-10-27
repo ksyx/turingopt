@@ -46,11 +46,11 @@ const char *JOBINFO_INSERT_SQL = SQLITE_CODEBLOCK(
   INSERT OR REPLACE INTO jobinfo(
     jobid, stepid, user, name, submit_line,
     timelimit, started_at, ended_at,
-    mem, nnodes, ncpu, ngpu
+    mem, peak_res_size, nnodes, ncpu, ngpu
   ) VALUES (
     :jobid, :stepid, :user, :name, :submit_line,
     :timelimit, :started_at, :ended_at,
-    :mem, :nnodes, :ncpu, :ngpu
+    :mem, :peak_res_size, :nnodes, :ncpu, :ngpu
   )
 );
 

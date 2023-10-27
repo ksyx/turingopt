@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS jobinfo(
   timelimit INTEGER,
   started_at INTEGER CHECK(started_at > 0),
   ended_at INTEGER CHECK(ended_at == 0 OR ended_at >= started_at),
-  mem INTEGER,
+  mem/*_limit*/ INTEGER, peak_res_size INTEGER,
   nnodes INTEGER CHECK(nnodes > 0), ncpu INTEGER CHECK(ncpu > 0),
   ngpu INTEGER CHECK((ngpu IS NULL) IS NOT (stepid IS NULL)),
   PRIMARY KEY (jobid, stepid)
