@@ -390,7 +390,7 @@ void run_analysis_stmt(
     }
   }
   bool has_named_problem = problem_cnt.size();
-  if (has_named_problem || stmt == info->latest_problem_stmt) {
+  if (has_named_problem || (stmt == info->latest_problem_stmt && tot)) {
     auto title_str = std::string(title);
     {
     char &title_lead = title_str[0];
@@ -428,7 +428,7 @@ void run_analysis_stmt(
 }
 
 static inline
-void do_analyze(
+bool do_analyze(
   analysis_info_t *info, std::string &tldr, FILE *fp, FILE *header_fp) {
   bool toc_added = 0;
   static bool newline = 0;
@@ -459,13 +459,14 @@ void do_analyze(
   } else {
     tldr.resize(tldr_len_old);
   }
+  return toc_added;
 }
 
 void do_analyze() {
   std::string path = "analysis_result";
   auto makedir = [&path](bool allow_existing) {
     if (mkdir(path.c_str(), mkdir_mode)
-        && (allow_existing || errno != EEXIST)) {
+        && (!allow_existing || errno != EEXIST)) {
       perror("mkdir");
       exit(1);
     }
@@ -579,6 +580,7 @@ void do_analyze() {
     }
     first = 0;
     }
+    bool has_analysis = 0;
     std::string mail_path = path + std::string(user) + std::string(".mail");
     auto fp = fopen((mail_path + std::string(".header")).c_str(), "w");
     if (!fp) {
@@ -632,7 +634,7 @@ void do_analyze() {
     {
       auto cur = analysis_list;
       while (auto info = *cur) {
-        do_analyze(info, tldr, fp, header_fp);
+        has_analysis |= do_analyze(info, tldr, fp, header_fp);
         cur++;
       }
     }
@@ -699,6 +701,9 @@ void do_analyze() {
       fprintf(fp, "%s</td></table>", is_list ? "</ul>" : "");
     }
     fclose(fp);
+    if (!has_analysis) {
+      fclose(fopen((mail_path + std::string(".empty")).c_str(), "w"));
+    }
     post_analyze();
   }
   #undef OP
