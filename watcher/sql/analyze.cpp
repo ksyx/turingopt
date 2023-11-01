@@ -207,7 +207,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         format('[%.2lf%%, %.2lf%%]',
                 (1.0 * step_start_offset) / job_length * 100,
                 (1.0 * step_end_offset) / job_length * 100) AS timespan,
-        NULL AS ncpu, NULL AS cpu_usage, ngpu, gpu_usage,
+        NULL AS nnode, NULL AS ncpu, cpu_usage, ngpu, gpu_usage,
         peak_res_size, mem_limit, sample_cnt,
         rtrim(iif(is_jupyter, 'jupyter | ', '')
               || iif(peak_res_size > mem_limit, 'oversubscribe | ', '')
@@ -221,63 +221,107 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     FROM inmem.timeseries
     GROUP BY jobid, stepid
     ) AS ts, (
-    SELECT jobid, stepid,
-          iif(ngpu == 0, '',
-              group_concat(node || ' (' || node_tot || ' sample'
-                            || iif(node_tot > 1, 's', '') || ')' || x'0a'
-                            || gpu_usage, x'0a0a'))
-            AS gpu_usage,
-          count(node) AS nnode,
-          max(gpu_flagged) AS gpu_flagged
-    FROM (
+  SELECT jobid, stepid,
+         iif(sel_ngpu == 0, '',
+             group_concat(iif(gpu_flagged, '** ', '') || node
+                          || ' (' || node_tot || ' sample'
+                          || iif(node_tot > 1, 's', '') || ')' || x'0a'
+                          || gpu_usage, x'0a0a'))
+           AS gpu_usage,
+         group_concat(iif(cpu_flagged, '** ', '') || node
+                          || ' (' || sel_ncpu || ' CPU'
+                          || iif(sel_ncpu > 1, 's', '') || ')' || x'0a'
+                          || node_tot || ' sample'
+                          || iif(node_tot > 1, 's', '') || x'0a'
+                          || cpu_usage, x'0a0a')
+           AS cpu_usage,
+         count(node) AS nnode,
+         max(gpu_flagged) AS gpu_flagged,
+         max(cpu_flagged) AS cpu_flagged
+  FROM (
     SELECT
-      *,
-      ' ngpu' || x'0a' || 'inuse percentage' || x'0a' ||
-      group_concat(format('%5d %6.2lf%%',
-                          ngpu_in_use, (1.0 * cnt)/node_tot * 100, cnt),
+      jobid, stepid, node,
+      max(ncpu) AS sel_ncpu, max(ngpu) AS sel_ngpu, node_tot, 
+      ' ncpu' || x'0a' || 'inuse percentage' || x'0a' ||  
+      group_concat(iif(ncpu_in_use IS NULL, NULL, format('%5d %6.2lf%%',
+                          ncpu_in_use, (1.0 * cnt_cpu)/node_tot * 100)),
+                  x'0a')
+        AS cpu_usage,
+      ' ngpu' || x'0a' || 'inuse percentage' || x'0a' ||  
+      group_concat(iif(ngpu_in_use IS NULL, NULL, format('%5d %6.2lf%%',
+                          ngpu_in_use, (1.0 * cnt_gpu)/node_tot * 100)),
                   x'0a')
         AS gpu_usage,
       ngpu > 0 AND
       (first_value(ngpu_in_use) OVER win == 0
-        OR first_value(cnt) OVER win != max(cnt)
+        OR first_value(cnt_gpu) OVER win != max(cnt_gpu)
         OR (alloc_nnodes == 1 AND first_value(ngpu_in_use) OVER win != ngpu))
-      AS gpu_flagged
+      AS gpu_flagged,
+      1.0 * total(ncpu_in_use * cnt_cpu) / node_tot < 0.5 * max(ncpu)
+        AS cpu_flagged
     FROM (
-    SELECT DISTINCT ts.jobid, ts.stepid,
-          target_node AS node, ngpu_in_use, count(*) OVER win AS cnt,
-          count(*) OVER win_super AS node_tot, ts.ngpu, nnodes AS alloc_nnodes
+    SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
+          ngpu_in_use, count(*) OVER win AS cnt_gpu, ts.ngpu,
+          NULL AS ncpu_in_use, NULL AS cnt_cpu, NULL AS ncpu,
+          count(*) OVER win_super AS node_tot, nnodes AS alloc_nnodes
     FROM inmem.timeseries AS ts, watcher,
         (SELECT batch, count(gpuid) AS ngpu_in_use
           FROM gpu_measurements GROUP BY batch
           UNION SELECT NULL, 0)
     WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
+    WINDOW win AS
+            (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
+          win_super AS
+            (PARTITION BY ts.jobid, ts.stepid, target_node)
+    UNION
+    SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
+          NULL AS ngpu_in_use, NULL AS cnt_gpu, NULL AS ngpu,
+          iif(the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1, the_ncpu_in_use, NULL)
+            AS ncpu_in_use,
+          count(*) OVER win AS cnt_cpu,
+          the_ncpu AS ncpu,
+          count(*) FILTER (WHERE the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1)
+            OVER win_super AS node_tot,
+          nnodes AS alloc_nnodes
+    FROM inmem.timeseries AS ts, watcher, (
+            SELECT recordid AS the_recordid, ncpu AS the_ncpu,
+                  ceil(1.0 *
+                    (delta_user_time + delta_sys_time)
+                     / (scrape_interval * 1e6)) AS the_ncpu_in_use
+            FROM inmem.timeseries
+          )
+    WHERE watcher.id == watcherid AND the_recordid == recordid
           AND ts.latest_recordid > :offset_start
           AND ts.latest_recordid <= :offset_end
-    WINDOW win AS (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
-          win_super AS (PARTITION BY ts.jobid, ts.stepid, target_node)
+    WINDOW win AS
+            (PARTITION BY ts.jobid, ts.stepid, target_node, the_ncpu_in_use),
+          win_super AS
+            (PARTITION BY ts.jobid, ts.stepid, target_node)
     )
     GROUP BY jobid, stepid, node
     WINDOW win AS
-      (PARTITION BY jobid, stepid, node ORDER BY ngpu_in_use DESC NULLS LAST)
+      (PARTITION BY jobid, stepid, node
+      ORDER BY ngpu_in_use DESC NULLS LAST, ncpu_in_use DESC NULLS LAST)
     )
     GROUP BY jobid, stepid
-  ) AS gpuinfo, (
+    ORDER BY gpu_flagged DESC, cpu_flagged DESC
+  ) AS gpucpuinfo, (
     SELECT jobid, stepid,
           max(application IN ('jupyter-notebook', 'jupyter-lab')) AS is_jupyter
     FROM application_usage
     GROUP BY jobid, stepid
   ) AS jupyterinfo
-  WHERE gpuinfo.jobid == ts.jobid AND gpuinfo.stepid == ts.stepid
+  WHERE gpucpuinfo.jobid == ts.jobid AND gpucpuinfo.stepid == ts.stepid
         AND jupyterinfo.jobid == ts.jobid AND jupyterinfo.stepid == ts.stepid;
 ), /*[6]*/
     "INSERT INTO inmem.resource_usage("
-    "jobid, stepid, name, peak_res_size, mem_limit, timespan, ncpu, cpu_usage,"
-    "problem)"
+    "jobid, stepid, name, peak_res_size, mem_limit, timespan, nnode,"
+    "ncpu, cpu_usage, problem)"
     "SELECT jobid, NULL AS stepid, name, 0, 0,"
     "format('%.2lf%% of timelimit used', 1.0 * elapsed / timelimit * 100)"
     " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(elapsed)
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(timelimit) "AS timespan,"
-    "ncpu, format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
+    "nnode, ncpu, format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
     " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(actual_cpu)
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(cpu_possible)
     " || x'0a' "
@@ -292,7 +336,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     FROM (
     WITH jobids AS MATERIALIZED
       (SELECT DISTINCT jobid FROM inmem.resource_usage)
-    SELECT jobids.jobid, name, timelimit * 60 AS timelimit,
+    SELECT jobids.jobid, name, nnodes AS nnode, timelimit * 60 AS timelimit,
           ncpu, tot_time / 1e6 AS actual_cpu,
           ended_at - started_at AS elapsed,
           (ended_at - started_at) * ncpu AS cpu_possible
@@ -400,7 +444,7 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
 const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
   SELECT agg_jobid AS jobid, stepid, name,
          :offset_end - :offset_start AS unused,
-         agg_sample_cnt AS sample_cnt,
+         agg_sample_cnt AS sample_cnt, nnode,
          format('%d / %d MB (%.2lf%%)',
                 agg_peak_res_size / 1024 / 1024,
                 agg_mem_limit / 1024 / 1024,

@@ -119,6 +119,12 @@ const struct analyze_result_field_t resource_usage_fields[] = {
     .type = ANALYZE_RESULT_INT,
     .flags = ANALYZE_FIELD_NO_FLAG,
   }, {
+    .sql_column_name = "nnode",
+    .printed_name = "Node Count",
+    .help = NULL,
+    .type = ANALYZE_RESULT_INT,
+    .flags = ANALYZE_FIELD_NO_FLAG,
+  }, {
     .sql_column_name = "mem_usage",
     .printed_name = "Memory Usage",
     .help = NULL,
