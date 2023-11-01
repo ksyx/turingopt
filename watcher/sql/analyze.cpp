@@ -36,21 +36,17 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
   CREATE TABLE inmem.timeseries AS
     WITH grouped_measurements AS MATERIALIZED (
       WITH batch_ranges AS MATERIALIZED (
-        SELECT rank() OVER win AS measurement_batch,
-              lag(recordid, -1, 9e18) OVER win - 1 AS r,
-              recordid AS l
+        SELECT recordid, sum(flag) OVER win AS measurement_batch
         FROM (
           SELECT
             recordid, (lag(watcherid) OVER win IS NOT watcherid) AS flag
           FROM inmem.measurements
-          WINDOW win AS (ORDER BY recordid)) WHERE flag=1
-        WINDOW win AS (ORDER BY recordid)
+          WINDOW win AS (ORDER BY recordid))
+        WINDOW win AS (ORDER BY recordid
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
       )
-      SELECT *, (
-        SELECT measurement_batch FROM batch_ranges WHERE
-          recordid >= l AND recordid <= r
-      ) AS measurement_batch 
-        FROM inmem.measurements
+      SELECT *, measurement_batch
+        FROM inmem.measurements JOIN batch_ranges USING (recordid)
     ), recombined_jobinfo AS MATERIALIZED (
       SELECT
         jobid, stepid,
@@ -87,7 +83,11 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     AS delta_res_size_from_midline,
     minor_pagefault - lag(minor_pagefault, 1, minor_pagefault)
     OVER win AS delta_minor_pagefault
-    FROM grouped_measurements, recombined_jobinfo
+    FROM grouped_measurements JOIN recombined_jobinfo USING (jobid, stepid)
+       /*LEFT*/ JOIN job_step_cpu_available USING (jobid, stepid, watcherid)
+       JOIN (SELECT *, lead(start, 1, 2e9) OVER win AS endval
+               FROM scrape_freq_log_internal WINDOW win AS (ORDER BY start))
+       ON (recordid >= start AND recordid < endval)
     WHERE
     recombined_jobinfo.jobid == grouped_measurements.jobid
     AND recombined_jobinfo.stepid == grouped_measurements.stepid
