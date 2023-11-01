@@ -248,6 +248,7 @@ void run_analysis_stmt(
     std::queue<int> colspans;
     const double not_an_number = std::nan("0");
     int cnt_percentage = 0;
+    bool met_stepid = 0;
     SQLITE3_FETCH_COLUMNS_START(NULL)
     SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
       if (!cur->sql_column_name) {
@@ -260,7 +261,6 @@ void run_analysis_stmt(
         tot = SQLITE3_FETCH(int);
       }
       bool is_percentage = cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE;
-      bool met_stepid = 0;
       bool is_null_data = SQLITE3_IS_NULL();
       if (!cur->printed_name) {
         goto finalize_table_row_loop;

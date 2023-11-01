@@ -177,7 +177,7 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
     .cause = "Your job submission involves starting your own Jupyter Notebook"
              " or Jupyter Hub on compute nodes.",
     .impact = "The interactive nature of Jupyter applications create"
-              " <b>excessive</b>amount of idle time that could otherwise be"
+              " <b>excessive</b> amount of idle time that could otherwise be"
               " allocated to other jobs and achieve higher utilization.",
     .solution = "Please refer to NEWS section and use the shared Jupyter Hub"
                 " instance that has more fancy features than Jupyter Notebook,"
