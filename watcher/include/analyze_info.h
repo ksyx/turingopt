@@ -64,6 +64,7 @@ typedef struct analysis_info_t {
   #undef PAIR
 };
 
+extern const char *row_group_top_style;
 extern const char *analyze_letter_stylesheet;
 extern const char *profiling_support_instructions;
 extern const char *summary_letter_usage[];

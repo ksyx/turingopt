@@ -156,7 +156,8 @@ void run_analysis_stmt(
         for (auto cur_problem = info->problems;
               cur_problem->sql_name;
               cur_problem++) {
-          fprintf(fp, "<tr>" ANCHORED_TAG(th %s, "%s_%s", "%s"),
+          fprintf(fp, "<tr %s>" ANCHORED_TAG(th %s, "%s_%s", "%s"),
+                      row_group_top_style,
                       cur_problem->oneliner ? "" : "rowspan=\"3\"",
                       info_machine_name_str,
                       cur_problem->sql_name,
@@ -240,7 +241,7 @@ void run_analysis_stmt(
       }
       fputs("</tr>", fp);
     }
-    fputs("<tr>", fp);
+    fprintf(fp, "<tr %s>", row_group_top_style);
     auto cur = info->fields;
     int tot = 0;
     std::queue<double> percentages;

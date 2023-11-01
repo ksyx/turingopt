@@ -74,11 +74,18 @@ const char *summary_letter_usage[] = {
   NULL
 };
 
+const char *row_group_top_style = "style=\"border-top-style: ridge\"";
+
 const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
   <style>
   table, th, td {
-    border: 1px solid black;
     border-collapse: collapse;
+  }
+  th, td {
+    border: 1px solid black;
+  }
+  table {
+    border: 1.5px solid black;
   }
   td {
     padding-left: 0.5rem;
