@@ -318,14 +318,17 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     "jobid, stepid, name, peak_res_size, mem_limit, timespan, nnode,"
     "ncpu, cpu_usage, problem)"
     "SELECT jobid, NULL AS stepid, name, 0, 0,"
+    "iif(elapsed > 0, "
     "format('%.2lf%% of timelimit used', 1.0 * elapsed / timelimit * 100)"
-    " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(elapsed)
+    " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(elapsed) ", 'running')"
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(timelimit) "AS timespan,"
-    "nnode, ncpu, format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
+    "nnode, ncpu, iif(elapsed > 0,"
+    "format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
     " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(actual_cpu)
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(cpu_possible)
     " || x'0a' "
     " || format('percentage: %.2lf%%', 1.0 * actual_cpu / cpu_possible * 100)"
+    ", '')"
     "AS cpu_usage,"
   SQLITE_CODEBLOCK(
     rtrim(iif(1.0 * actual_cpu / cpu_possible < 0.5,
