@@ -266,9 +266,11 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           count(*) OVER win_super AS node_tot, nnodes AS alloc_nnodes
     FROM inmem.timeseries AS ts, watcher,
         (SELECT batch, count(gpuid) AS ngpu_in_use
-          FROM gpu_measurements GROUP BY batch
+          FROM gpu_measurements GROUP BY batch, gpuid
           UNION SELECT NULL, 0)
     WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
+          AND ts.latest_recordid > :offset_start
+          AND ts.latest_recordid <= :offset_end
     WINDOW win AS
             (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
           win_super AS
