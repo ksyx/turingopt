@@ -11,6 +11,8 @@ const char *profiling_support_instructions
     "\">profiling support</a> to identify bottleneck of the code. Be sure to"
     " attach problem summary and measurement rows indicating the problem for"
     " context.";
+
+const char *analyze_letter_reply_address = ANALYZE_MAIL_CONTACT;
 const char *analyze_mail_cc[] = {
   ANALYZE_MAIL_CONTACT,
   "Alice <alice@example.com.localhost>",

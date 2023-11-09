@@ -72,6 +72,7 @@ extern const char *summary_letter_usage[];
 extern struct analysis_info_t * const analysis_list[];
 extern const char *analyze_news;
 extern const char *analyze_letter_domain;
+extern const char *analyze_letter_reply_address;
 extern const char *analyze_mail_cc[];
 extern const char *analyze_letter_subject;
 extern const char *analyze_letter_header;

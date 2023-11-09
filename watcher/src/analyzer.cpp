@@ -607,6 +607,9 @@ void do_analyze() {
       perror("fopen");
       continue;
     }
+    if (analyze_letter_reply_address) {
+      fprintf(fp, "Reply-To: %s\n", analyze_letter_reply_address);
+    }
     fprintf(fp, "To: %s@%s\n", user, analyze_letter_domain);
     {
       const char **cur = analyze_mail_cc;
