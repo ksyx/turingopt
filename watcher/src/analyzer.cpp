@@ -170,34 +170,7 @@ void run_analysis_stmt(
                     cur_problem->cause,
                     cur_problem->impact,
                     cur_problem->solution);
-            {
-              const char *solution_str = NULL;
-              switch (cur_problem->solution_type) {
-                case ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM:
-                  solution_str = "checking your code and allocation request"
-                                " parameters.";
-                  break;
-                case ANALYZE_SOLUTION_TYPE_NEED_PROFILING:
-                  if (profiling_support_instructions) {
-                    solution_str = profiling_support_instructions;
-                    break;
-                  } else {
-                    solution_str = "profiling your code. Request a consultation"
-                                  " session for more information.";
-                  }
-                  break;
-                case ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION:
-                  solution_str = "requesting a consultation session if needed.";
-                  break;
-              }
-              if (solution_str) {
-                fprintf(fp, PARAGRAPH("This problem could be solved by %s"),
-                        solution_str);
-              } else {
-                fputs("warning: unknown solution type.\n", stderr);
-              }
-              fputs("</td></tr>\n", fp);
-            }
+            fputs("</td></tr>\n", fp);
           } else {
             fprintf(fp, TABLECELL(PARAGRAPH("%s"), COLSPAN(2)) "</tr>",
                         cur_problem->oneliner);
@@ -424,10 +397,34 @@ void run_analysis_stmt(
         << "<b>" << title_str << "</b></a>"
         << (has_named_problem ? "<ul>" : "</li>\n");
     for (const auto &[problem, cnt] : problem_cnt) {
+      const char *solution_str = NULL;
+      switch (problem->solution_type) {
+        case ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM:
+          solution_str = "checking your code and allocation request"
+                        " parameters.";
+          break;
+        case ANALYZE_SOLUTION_TYPE_NEED_PROFILING:
+          if (profiling_support_instructions) {
+            solution_str = profiling_support_instructions;
+            break;
+          } else {
+            solution_str = "profiling your code. Request a consultation"
+                          " session for more information.";
+          }
+          break;
+        case ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION:
+          solution_str = "requesting a consultation session if needed.";
+          break;
+      }
       out << "<li>" << cnt << " entr" << (cnt == 1 ? "y has" : "ies have")
           << " problem <a href=\"#"
           << info_machine_name_str << "_" << problem->sql_name << "\">"
           << "<b>" << problem->printed_name << "</b></a>\n";
+      if (solution_str) {
+        out << " and could be solved by " << solution_str;
+      } else if (problem->solution_type != ANALYZE_SOLUTION_TYPE_OTHER) {
+        fputs("warning: unknown solution type.\n", stderr);
+      }
     }
     if (has_named_problem) {
       out << "</ul></li>";

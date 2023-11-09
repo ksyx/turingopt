@@ -166,7 +166,8 @@ const struct analyze_result_field_t resource_usage_fields[] = {
     .help = "The GPU usage information is derived from sampled data and may not"
             " represent the full picture.",
     .type = ANALYZE_RESULT_STR,
-  }, problem_field,
+  },
+  problem_field,
   tail_field
 };
 
@@ -183,7 +184,7 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
                 " instance that has more fancy features than Jupyter Notebook,"
                 " separates web server from compute jobs, and creates job on "
                 " demand to ensure higher resource utilization.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_OTHER
   }, {
     .sql_name = "oversubscribe",
     .printed_name = "Memory Oversubscribe",
@@ -211,14 +212,17 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
     .sql_name = "cpu_underusage",
     .printed_name = "CPU Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
   }, {
     .sql_name = "mem_underusage",
     .printed_name = "Memory Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
   }, {
     .sql_name = "timelimit_underusage",
     .printed_name = "Time Limit Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
   },
   tail_problem
 };
