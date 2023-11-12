@@ -211,7 +211,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         peak_res_size, mem_limit, sample_cnt,
         rtrim(iif(is_jupyter, 'jupyter | ', '')
               || iif(peak_res_size > mem_limit, 'oversubscribe | ', '')
-              || iif(gpu_flagged, 'gpu_underusage', '')
+              || iif(gpu_flagged, 'gpu_underusage | ', '')
+              || iif(cpu_flagged, 'cpu_underusage | ', '')
               , '| ') AS problem
   FROM (SELECT
     jobid, stepid, name, submit_line, job_length, ngpu,
@@ -333,7 +334,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     ", '')"
     "AS cpu_usage,"
   SQLITE_CODEBLOCK(
-    rtrim(iif(1.0 * actual_cpu / cpu_possible < 0.5,
+    rtrim(iif(1.0 * actual_cpu / cpu_possible < 0.5 AND elapsed > 0,
                     'cpu_underusage | ', '')
                 /*|| iif(1.0 * elapsed / timelimit < 0.75,
                       'timelimit_underusage | ', '')*/
