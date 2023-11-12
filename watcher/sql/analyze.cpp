@@ -209,6 +209,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
                 (1.0 * step_end_offset) / job_length * 100) AS timespan,
         NULL AS nnode, NULL AS ncpu, cpu_usage, ngpu, gpu_usage,
         peak_res_size, mem_limit, sample_cnt,
+        peak_res_size == peak_res_size_slurm AS is_res_size_from_slurm,
         rtrim(iif(is_jupyter, 'jupyter | ', '')
               || iif(peak_res_size > mem_limit, 'oversubscribe | ', '')
               || iif(gpu_flagged, 'gpu_underusage | ', '')
@@ -218,11 +219,12 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     jobid, stepid, name, submit_line, job_length, ngpu,
     step_start_offset, step_end_offset, mem_limit,
     count(recordid) AS sample_cnt,
-    max(peak_res_size, max(res_size)) AS peak_res_size
+    max(peak_res_size, max(res_size)) AS peak_res_size,
+    peak_res_size AS peak_res_size_slurm
     FROM inmem.timeseries
     GROUP BY jobid, stepid
     ) AS ts, (
-  SELECT jobid, stepid,
+        SELECT jobid, stepid,
          iif(sel_ngpu == 0, '',
              group_concat(iif(gpu_flagged, '** ', '') || node
                           || ' (' || node_tot || ' sample'
@@ -453,9 +455,12 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
          agg_sample_cnt AS sample_cnt, nnode,
          format('%d / %d MB (%.2lf%%)',
                 agg_peak_res_size / 1024 / 1024,
-                agg_mem_limit / 1024 / 1024,
+                agg_mem_limit / 1024 / 1024
+                  / iif(peak_res_size IS peak_res_size_slurm, 1, nnode),
                 1.0 * agg_peak_res_size / agg_mem_limit * 100)
-         AS mem_usage, timespan, ncpu, cpu_usage, ngpu, gpu_usage,
+          || x'0a' || 'source: '
+          || iif(agg_peak_res_size IS peak_res_size_slurm, 'SLURM', 'samples')
+           AS mem_usage, timespan, ncpu, cpu_usage, ngpu, gpu_usage,
          rtrim(iif(agg_peak_res_size < 0.75 * agg_mem_limit,
                       'mem_underusage | ', '')
                || problem, '| ') AS problem_tag
@@ -465,7 +470,12 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
           iif(stepid IS NULL, max(peak_res_size) OVER win, peak_res_size)
             AS agg_peak_res_size,
           iif(stepid IS NULL, max(mem_limit) OVER win, mem_limit)
-            AS agg_mem_limit
+            AS agg_mem_limit,
+          iif(stepid IS NULL,
+              max(peak_res_size)
+                FILTER (WHERE is_res_size_from_slurm IS 1) OVER win,
+              is_res_size_from_slurm * peak_res_size)
+              AS peak_res_size_slurm
     FROM inmem.resource_usage AS usage
     WINDOW win AS (PARTITION BY usage.jobid)
     ORDER BY usage.jobid, stepid NULLS FIRST
