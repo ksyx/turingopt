@@ -247,12 +247,12 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       max(ncpu) AS sel_ncpu, max(ngpu) AS sel_ngpu, node_tot, 
       ' ncpu' || x'0a' || 'inuse percentage' || x'0a' ||  
       group_concat(iif(ncpu_in_use IS NULL, NULL, format('%5d %6.2lf%%',
-                          ncpu_in_use, (1.0 * cnt_cpu)/node_tot * 100)),
+                          ncpu_in_use, (1.0 * cnt_cpu) / node_tot * 100)),
                   x'0a')
         AS cpu_usage,
       ' ngpu' || x'0a' || 'inuse percentage' || x'0a' ||  
       group_concat(iif(ngpu_in_use IS NULL, NULL, format('%5d %6.2lf%%',
-                          ngpu_in_use, (1.0 * cnt_gpu)/node_tot * 100)),
+                          ngpu_in_use, (1.0 * cnt_gpu) / node_tot * 100)),
                   x'0a')
         AS gpu_usage,
       ngpu > 0 AND

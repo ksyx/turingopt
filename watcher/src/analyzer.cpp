@@ -255,11 +255,13 @@ void run_analysis_stmt(
           while (cur_id->name && cur_id->stepid != id) {
             cur_id++;
           }
+          fputs("<center>", fp);
           if (cur_id->name) {
             fprintf(fp, "%s", cur_id->name);
           } else {
             fprintf(fp, "%d", id);
-        }
+          }
+          fputs("</center>", fp);
         }
       } else if (cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE
                  && cur->type != ANALYZE_RESULT_STR) {
