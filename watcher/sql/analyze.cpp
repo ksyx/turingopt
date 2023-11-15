@@ -211,6 +211,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         peak_res_size, mem_limit, sample_cnt,
         peak_res_size == peak_res_size_slurm AS is_res_size_from_slurm,
         rtrim(iif(is_jupyter, 'jupyter | ', '')
+              || iif(low_concurrency, 'low_concurrency | ', '')
               || iif(peak_res_size > mem_limit, 'oversubscribe | ', '')
               || iif(gpu_flagged, 'gpu_underusage | ', '')
               || iif(cpu_flagged, 'cpu_underusage | ', '')
@@ -240,7 +241,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
            AS cpu_usage,
          count(node) AS nnode,
          max(gpu_flagged) AS gpu_flagged,
-         max(cpu_flagged) AS cpu_flagged
+         max(cpu_flagged) AS cpu_flagged,
+         max(low_concurrency) AS low_concurrency
   FROM (
     SELECT
       jobid, stepid, node,
@@ -260,6 +262,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         OR first_value(cnt_gpu) OVER win != max(cnt_gpu)
         OR (alloc_nnodes == 1 AND first_value(ngpu_in_use) OVER win != ngpu))
       AS gpu_flagged,
+      max(ncpu) > 1 AND max(ncpu_in_use) <= 1 AND max(ngpu_in_use) IS 0
+        AS low_concurrency,
       1.0 * total(ncpu_in_use * cnt_cpu) / node_tot < 0.5 * max(ncpu)
         AS cpu_flagged
     FROM (
@@ -461,9 +465,11 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
           || x'0a' || 'source: '
           || iif(agg_peak_res_size IS peak_res_size_slurm, 'SLURM', 'samples')
            AS mem_usage, timespan, ncpu, cpu_usage, ngpu, gpu_usage,
-         rtrim(iif(agg_peak_res_size < 0.75 * agg_mem_limit,
-                      'mem_underusage | ', '')
-               || problem, '| ') AS problem_tag
+         rtrim(iif(INSTR(problem, 'cpu_underusage') IS 0 AND low_compute_power,
+                   'low_compute_power | ', '')
+               || problem
+               || iif(agg_peak_res_size < 0.75 * agg_mem_limit,
+                      '| mem_underusage', ''), '| ') AS problem_tag
   FROM (
     SELECT *, iif(stepid IS NULL, jobid, NULL) AS agg_jobid,
           ifnull(sample_cnt, total(sample_cnt) OVER win) AS agg_sample_cnt,
@@ -475,7 +481,9 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
               max(peak_res_size)
                 FILTER (WHERE is_res_size_from_slurm IS 1) OVER win,
               is_res_size_from_slurm * peak_res_size)
-              AS peak_res_size_slurm
+              AS peak_res_size_slurm,
+          stepid IS NULL AND ncpu <= 8 AND max(ngpu) OVER win IS 0
+            AS low_compute_power
     FROM inmem.resource_usage AS usage
     WINDOW win AS (PARTITION BY usage.jobid)
     ORDER BY usage.jobid, stepid NULLS FIRST

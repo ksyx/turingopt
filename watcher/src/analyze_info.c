@@ -186,6 +186,30 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
                 " demand to ensure higher resource utilization.",
     .solution_type = ANALYZE_SOLUTION_TYPE_OTHER
   }, {
+    .sql_name = "low_compute_power",
+    .printed_name = "Low Compute Power",
+    .cause = "The job submission requested no GPU and only a few CPU cores.",
+    .impact = "While it is possible that only large amount of available memory"
+              " is desired, i.e. your computation is memory-bounded, this"
+              " combination of request parameter could make job to run in a"
+              " performance that is <b>slower than on your laptop</b>.",
+    .solution = "Confirm your need. Try requesting more CPU cores and setting"
+                " higher concurrency parameter in your code with consulting"
+                " library documentations to see if there is improvement. Ignore"
+                " this message if the computation is memory-bounded and large"
+                " amount of available memory is the only resource in need.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+  }, {
+    .sql_name = "low_concurrency",
+    .printed_name = "Low Concurrency",
+    .cause = "Samples shows that no GPU and at most single CPU core is used.",
+    .impact = "This combination of request parameter could make job to run in a"
+              " performance that is <b>slower than on your laptop</b>.",
+    .solution = "Set higher concurrency parameter or connect to GPU in your"
+                " code with consulting library documentations to check for"
+                " improvement.",
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+  }, {
     .sql_name = "oversubscribe",
     .printed_name = "Memory Oversubscribe",
     .cause = "The job submission used more memory than allocated.",
