@@ -46,3 +46,5 @@ incdir = [
 executable('turingwatch', src, include_directories: incdir,
            dependencies: [slurm, sqlite, nvml,libcurl, json_support],
            link_args: ['-flto', '-lpthread', '-ldl'])
+
+subdir('webserver')

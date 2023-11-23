@@ -1,0 +1,45 @@
+var tips = [{
+  "source": "Manually revised and styled ChatGPT 3.5 answer: Give me ten less known linux terminal tricks; Summary each of them as informal and short question less than 7 words",
+  "tips": [
+  {
+    "teaser": ["How to input command with editor"],
+	"details": "Combination key <kbd>Ctrl</kbd><kbd>x</kbd><kbd>e</kbd> opens the default text editor as specified by <code>$EDITOR</code> to edit the current command line. This is useful if you need to make complex or multi-line commands."
+  }, {
+	"teaser": ["How to reuse last argument"],
+	"details": "Combination key <kbd>Alt</kbd><kbd>.</kbd> (period) Inserts the last argument from the previous command. This is handy when you want to reuse the last argument from the previous command without typing it again."
+  }, {
+	"teaser": ["How to search command history"],
+	"details": "Combination key <kbd>Ctrl</kbd><kbd>r</kbd> initiates a reverse search in your command history. As you type, it autocompletes the most recent command that matches the entered characters."
+  }, {
+	"teaser": ["Why is terminal freezed", "How to freeze output", "How to save file with Ctrl+S in terminal"],
+	"details": "Combination key <kbd>Ctrl</kbd><kbd>s</kbd> does not save your file, while instead freezes terminal output. You can resume output with <kbd>Ctrl</kbd><kbd>q</kbd>. Note that every input during freeze may be sent during freeze and will be sent to the terminal after unfreeze so be careful!"
+  }, {
+	"teaser": ["Clipboard in shell"],
+	"details": "Combine the following keys with <kbd>Ctrl</kbd>:<ul><li><kbd>y</kbd>: paste</li><li><kbd>w</kbd>: cut from word start to cursor</li><li><kbd>u</kbd>: cut from start to cursor</li><li><kbd>k</kbd>: cut from cursor to end</li></ul>"
+  }, {
+	"teaser": ["Prepend something to last command", "Append something to last command"],
+	"details": "The string <code>!!</code> represents the last command used. For example, if you want to run a python through certain interpreter after directly running it, <code>python3 !! [some args]</code> equivalents to <code>python3 ./something.py [some args]</code>. However, make sure your last command is not something like <code>rm * && cd ..</code>."
+  }, {
+	"teaser": ["How to swap last two letters in command"],
+	"details": "Combination key <kbd>Ctrl</kbd><kbd>t</kbd> swaps the last two characters before the cursor. It's a quick way to fix a typo without moving the cursor."
+  }, {
+	"teaser": ["How to repeatedly check command output"],
+	"details": "The command <code>watch</code> executes a command periodically and shows the output in real-time. For example, <code>watch -n 1 'squeue -u user'</code> will display queuing status of your jobs and refresh each second."
+  }, {
+    "teaser": ["How to undo in shell"],
+	"details": "The combination key <kbd>Ctrl</kbd><kbd>_</kbd> (underscore) undoes the last change."
+  }, {
+    "teaser": ["Remember current directory before cd"],
+	"details": "Commands <code>pushd</code> and <code>popd</code> are used to manipulate the directory stack. The command <code>pushd</code> also implies <code>cd</code> through saving current directory onto top of the stack and changing to specified directory, while <code>popd</code> returns to the directory at the top of the stack. This is useful for efficiently navigating through directories."
+  }
+  ]
+}, {
+  "source": "",
+  "tips": [{
+    "teaser": ["Why is installing sl a bad idea"],
+	"details": "Installing <code>sl</code> makes you forced see a train going across your screen when you mistype <code>ls</code>. It would be more interesting if you are in a live demo."
+  }, {
+	"teaser": ["Why is Ctrl+Z not an actual stop", "[1]+ Stopped?"],
+	"details": "The text <code>[1]+ Stopped</code> shown after pressing Ctrl+Z means the process received SIGSTOP, but this would not kill the job and free its memory use, while instead hang it there. Bring it back into front using fg command and use <kbd>Ctrl</kbd><kbd>C</kbd> to kill it. If it is not responding, use <code>kill</code> command or find your job in <code>htop</code> then use <kbd>F9</kbd> and <code>SIGKILL</code>."
+  }]
+}]

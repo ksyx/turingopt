@@ -1,0 +1,85 @@
+.reveal .slides {
+  overflow: auto;
+  text-align: left;
+  font-size: 30px;
+}
+
+table,
+th,
+td {
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid black;
+}
+
+table {
+  border: 1.5px solid black;
+  transform-origin: top left;
+}
+
+.reveal table td {
+  padding: 0em 0.5rem 0em 0.5rem;
+  vertical-align: middle;
+}
+
+td>ul,
+td>ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.reveal pre {
+  box-shadow: revert;
+  width: 100%;
+}
+
+.reveal code {
+  white-space: pre;
+  font-size: 25px;
+  line-height: initial;
+}
+
+.reveal pre code {
+  max-height: unset;
+}
+
+.tipoftheday {
+  border-color: rgb(160, 160, 160)
+}
+
+.reveal .controls .navigate-left.highlight,
+.reveal .controls .navigate-right.highlight,
+.reveal .controls .navigate-up.highlight,
+.reveal .controls .navigate-down.highlight {
+  animation: none;
+}
+
+#customcontrols {
+  margin-top: 70%;
+  text-align: left;
+  position: relative;
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+}
+
+#customcontrols>ul {
+  position: unset;
+}
+
+::-webkit-scrollbar {
+    width: 5px;
+}
+
+::-webkit-scrollbar-track {
+    -webkit-box-shadow: inset 0 0 1px rgba(0,0,0,0.3); 
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+    border-radius: 5px;
+    -webkit-box-shadow: inset 0 0 999px rgba(0,0,0,0.05); 
+}
