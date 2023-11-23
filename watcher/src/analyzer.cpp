@@ -625,7 +625,7 @@ void do_analyze() {
     fputs("\n", fp);
     bool has_usage = summary_letter_usage[0];
     std::string tldr = "";
-    fprintf(fp, "<head>%s</head>", analyze_letter_stylesheet);
+    fprintf(fp, "<head>%s</head><body>", analyze_letter_stylesheet);
     fprintf(fp,
             "%s\n" HEADER_TEXT("toc", "Table of Contents") "\n<table>\n"
             WRAPTAG(tr,
@@ -664,7 +664,8 @@ void do_analyze() {
                 WRAPTAG(sub,
                         WRAPTAG(code, "Analysis ID: %s")
                         "<br>"
-                        ANCHOR_LINK("toc", "Top")),
+                        ANCHOR_LINK("toc", "Top"))
+                "</body>",
                 analyze_letter_footer, analysis_id.c_str());
     fclose(fp);
     finalize_loop:
