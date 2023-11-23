@@ -113,18 +113,6 @@ const struct analyze_result_field_t resource_usage_fields[] = {
     .printed_name = NULL,
     .help = NULL
   }, {
-    .sql_column_name = "sample_cnt",
-    .printed_name = "Sample Amount",
-    .help = "Amount of samples collected to produce this result row.",
-    .type = ANALYZE_RESULT_INT,
-    .flags = ANALYZE_FIELD_NO_FLAG,
-  }, {
-    .sql_column_name = "nnode",
-    .printed_name = "Node Count",
-    .help = NULL,
-    .type = ANALYZE_RESULT_INT,
-    .flags = ANALYZE_FIELD_NO_FLAG,
-  }, {
     .sql_column_name = "mem_usage",
     .printed_name = "Memory Usage",
     .help = NULL,
@@ -141,12 +129,6 @@ const struct analyze_result_field_t resource_usage_fields[] = {
             " consumption has elapsed, while ends after running for as long as"
             " half of the job's actual time consumption.",
     .type = ANALYZE_RESULT_STR,
-  }, {
-    .sql_column_name = "ncpu",
-    .printed_name = "CPU Count",
-    .help = NULL,
-    .type = ANALYZE_RESULT_INT,
-    .flags = ANALYZE_FIELD_NO_FLAG,
   }, {
     .sql_column_name = "cpu_usage",
     .printed_name = "CPU Util",

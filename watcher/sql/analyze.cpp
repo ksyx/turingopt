@@ -228,16 +228,17 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         SELECT jobid, stepid,
          iif(sel_ngpu == 0, '',
              group_concat(iif(gpu_flagged, '** ', '') || node
-                          || ' (' || node_tot || ' sample'
-                          || iif(node_tot > 1, 's', '') || ')' || x'0a'
+                          || x'0a' || node_tot || ' sample'
+                          || iif(node_tot > 1, 's', '') || x'0a'
                           || gpu_usage, x'0a0a'))
            AS gpu_usage,
          group_concat(iif(cpu_flagged, '** ', '') || node
-                          || ' (' || sel_ncpu || ' CPU'
-                          || iif(sel_ncpu > 1, 's', '') || ')' || x'0a'
-                          || node_tot || ' sample'
+                          || x'0a' || node_tot || ' sample'
                           || iif(node_tot > 1, 's', '') || x'0a'
-                          || cpu_usage, x'0a0a')
+                          || cpu_usage || x'0a' || ' (' || sel_ncpu || ' core'
+                          || iif(sel_ncpu > 1, 's', '')
+                          || ' available)' || x'0a'
+                          , x'0a0a')
            AS cpu_usage,
          count(node) AS nnode,
          max(gpu_flagged) AS gpu_flagged,
@@ -331,8 +332,10 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     "format('%.2lf%% of timelimit used', 1.0 * elapsed / timelimit * 100)"
     " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(elapsed) ", 'running')"
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(timelimit) "AS timespan,"
-    "nnode, ncpu, iif(elapsed > 0,"
-    "format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
+    "nnode, ncpu,"
+    "format('allocated: %d core%s' || x'0a', ncpu, iif(ncpu > 1, 's', '')) "
+    " || iif(elapsed > 0,"
+    " format('average: %d cores', ceil(1.0 * actual_cpu / elapsed))"
     " || x'0a' || 'actual: ' || " SLURM_STYLE_TIME(actual_cpu)
     " || x'0a' || 'available: ' || " SLURM_STYLE_TIME(cpu_possible)
     " || x'0a' "
@@ -458,17 +461,20 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
 #undef _PROBLEMATIC_SYS_RATIO_CONDITION
 
 const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
-  SELECT agg_jobid AS jobid, stepid, name,
+  SELECT agg_jobid AS jobid, stepid,
+         name || x'0a'
+         || iif(nnode IS NULL, '',
+                '(' || nnode || ' node' || iif(nnode > 1, 's', '') || ')')
+           AS name,
          :offset_end - :offset_start AS unused,
-         agg_sample_cnt AS sample_cnt, nnode,
-         format('%d / %d MB (%.2lf%%)',
+         format('%.2lf%% (%d / %d MB)',
+                1.0 * agg_peak_res_size / agg_mem_limit * 100,
                 agg_peak_res_size / 1024 / 1024,
                 agg_mem_limit / 1024 / 1024
-                  / iif(peak_res_size IS peak_res_size_slurm, 1, nnode),
-                1.0 * agg_peak_res_size / agg_mem_limit * 100)
+                  / iif(peak_res_size IS peak_res_size_slurm, 1, nnode))
           || x'0a' || 'source: '
           || iif(agg_peak_res_size IS peak_res_size_slurm, 'SLURM', 'samples')
-           AS mem_usage, timespan, ncpu, cpu_usage, ngpu, gpu_usage,
+           AS mem_usage, timespan, cpu_usage, ngpu, gpu_usage,
          rtrim(iif(INSTR(problem, 'cpu_underusage') IS 0 AND low_compute_power,
                    'low_compute_power | ', '')
                || problem
