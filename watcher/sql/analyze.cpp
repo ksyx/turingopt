@@ -404,6 +404,8 @@ const char *ANALYZE_GPU_USAGE_HISTORY_SQL
         AS avg_power_usage
     FROM inmem.gpu_usage_base
     GROUP BY name, submit_line
+    HAVING max(latest_recordid) > :offset_start
+           AND max(latest_recordid) <= :offset_end
     ) SELECT *,
   )
   _SUMMARIZE_GPU_PROBLEM_SQL
@@ -443,6 +445,8 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
       sum(major_ratio_unified_tot) AS major_ratio_unified_tot
       FROM inmem.sys_ratio
       GROUP BY name, submit_line
+      HAVING max(latest_recordid) > :offset_start
+            AND max(latest_recordid) <= :offset_end
       ORDER BY name, submit_line, measurement_batch
     ) SELECT *,
   ) "iif(" _PROBLEMATIC_SYS_RATIO_CONDITION ", 'sys_ratio', '') AS problem_tag"
