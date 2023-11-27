@@ -49,7 +49,7 @@
 // For matching brackets in source files
 #define SQLITE3_FETCH_COLUMNS_END }}
 #define SQLITE3_FETCH(TY) sqlite3_column_##TY(STMT_REF_NAME, IDX_VAR_REF_NAME)
-#define SQLITE3_FETCH_STR(TY) SQLITE3_FETCH(text)
+#define SQLITE3_FETCH_STR() SQLITE3_FETCH(text)
 #define SQLITE3_IS_NULL() \
   sqlite3_column_type(STMT_REF_NAME, IDX_VAR_REF_NAME) == SQLITE_NULL
 #define GET_COLUMN_NAME() SQLITE3_FETCH(name)

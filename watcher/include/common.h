@@ -150,4 +150,6 @@ extern std::string slurm_conf_path;
 extern int watcher_id;
 extern time_t time_range_start;
 extern time_t time_range_end;
+
+extern time_t program_start;
 #endif

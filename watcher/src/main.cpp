@@ -18,6 +18,8 @@ int watcher_id;
 time_t time_range_start;
 time_t time_range_end;
 
+time_t program_start;
+
 bool distribute_node_watcher_only;
 static bool is_analyzer;
 
@@ -288,6 +290,7 @@ static inline bool initialize(int argc, char *argv[]) {
 }
 
 int main(int argc, char *argv[]) {
+  program_start = time(NULL);
   setlocale(LC_NUMERIC, "");
   atexit(finalize);
   if (getenv(PRINT_ONLY_ENV)) {

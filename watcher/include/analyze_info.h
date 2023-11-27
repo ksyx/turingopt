@@ -69,6 +69,8 @@ extern const char *row_group_top_style;
 extern const char *analyze_letter_stylesheet;
 extern const char *profiling_support_instructions;
 extern const char *summary_letter_usage[];
+extern const char *ANALYZE_INSERT_PROBLEM_LISTING_SQL;
+extern const char *ANALYZE_DUMP_DATA_TO_JSON_SQL;
 
 extern struct analysis_info_t * const analysis_list[];
 extern const char *analyze_news;

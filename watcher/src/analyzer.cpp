@@ -104,6 +104,7 @@ void run_analysis_stmt(
   std::map<const analyze_problem_t *, int> problem_cnt;
   DEBUGOUT_VERBOSE(fprintf(stderr, "%s\n", sqlite3_expanded_sql(stmt)));
   int tot = 0;
+  int stepid = -1, jobid = -1;
   bool is_history_analysis = info->history_analysis_stmt == stmt;
   while ((sqlite_ret = sqlite3_step(stmt)) == SQLITE_ROW) {
     tot++;
@@ -248,8 +249,10 @@ void run_analysis_stmt(
                   has_total && !is_percentage ? " rowspan=\"3\"" : "");
       if (cur->flags & ANALYZE_FIELD_STEP_ID) {
         met_stepid = 1;
+        stepid = -1;
         if (!is_null_data) {
           int id = SQLITE3_FETCH(int);
+          stepid = id;
           #include "def/slurm_stepid.inc"
           auto cur_id = slurm_stepid_mapping;
           while (cur_id->name && cur_id->stepid != id) {
@@ -281,6 +284,28 @@ void run_analysis_stmt(
       } else if (cur->flags & ANALYZE_FIELD_PROBLEMS) {
         auto str = (const char *)SQLITE3_FETCH_STR();
         std::string cur_problem = "";
+        sqlite3_stmt *insert_problem_listing_stmt = NULL;
+        bool bind_failed = false;
+        if (!is_history_analysis) {
+          if (!setup_stmt(
+            insert_problem_listing_stmt, ANALYZE_INSERT_PROBLEM_LISTING_SQL,
+            "(insert_problem_listing)")) {
+            exit(1);
+          }
+          SQLITE3_BIND_START
+          NAMED_BIND_INT(insert_problem_listing_stmt, ":jobid", jobid);
+          if (stepid != -1) {
+            NAMED_BIND_INT(insert_problem_listing_stmt, ":stepid", stepid);
+          } else {
+            BIND_NULL(insert_problem_listing_stmt, ":stepid");
+          }
+          if (BIND_FAILED) {
+            bind_failed = true;
+          }
+          SQLITE3_BIND_END
+        } else {
+          bind_failed = true;
+        }
         bool first = 1;
         while (str) {
             const char c = *str;
@@ -298,6 +323,20 @@ void run_analysis_stmt(
                   fprintf(fp, LISTITEM(ANCHOR_LINK("%s_%s", "%s")),
                           info_machine_name_str, info->sql_name,
                           info->printed_name);
+                  if (!bind_failed) {
+                    sqlite3_reset(insert_problem_listing_stmt);
+                    int ret;
+                    SQLITE3_BIND_START
+                      NAMED_BIND_TEXT(insert_problem_listing_stmt,
+                                      ":problem", info->printed_name);
+                      if (BIND_FAILED) {
+                        goto exit_bind_problem;
+                      }
+                    SQLITE3_BIND_END
+                    ret = step_and_verify(insert_problem_listing_stmt, 0,
+                                          "(insert_problem_listing)");
+                    exit_bind_problem:;
+                  }
                 } else {
                   fprintf(stderr, "warning: unknown problem %s\n",
                                   cur_problem.c_str());
@@ -310,6 +349,7 @@ void run_analysis_stmt(
           }
           str++;
         }
+        sqlite3_finalize(insert_problem_listing_stmt);
         if (!first) {
           fputs("</ul>", fp);
         }
@@ -323,6 +363,7 @@ void run_analysis_stmt(
             } else {
               fprintf(fp, ANCHOR_LINK("%s_%s", CENTER("%d")),
                           info_machine_name_str, title_machine_name_str, val);
+              jobid = val;
             }
             break;
           }
@@ -514,6 +555,14 @@ void do_analyze() {
   if (!verify_sqlite_ret(sqlite_ret, OPACTIVEUSER)) {
     return;
   }
+  auto json_fp = fopen((path + std::string("raw.json")).c_str(), "w");
+  if (!json_fp) {
+    perror("open");
+    exit(1);
+  }
+  fprintf(json_fp, "{\"started\": %ld, \"updated\": %ld, \"data\":{",
+                   program_start, time(NULL));
+  bool first_json_entry = 0;
   for (const auto &user_str : users) {
     auto post_analyze = []() {
       cleanup_all_stmts();
@@ -542,11 +591,11 @@ void do_analyze() {
       }
       auto &stmt = create_base_table_stmt[i];
       setup_stmt(stmt, *cur_stmt, OP);
-      if (i <= 1 || i == 5) {
+      if (i <= 1 || i == 6) {
         SQLITE3_BIND_START
         if (i <= 1) {
           NAMED_BIND_TEXT(stmt, ":user", user);
-        } else if (i == 5) {
+        } else if (i == 6) {
           BIND_OFFSET(stmt);
         }
         if (BIND_FAILED) {
@@ -726,9 +775,39 @@ void do_analyze() {
     fclose(fp);
     if (!has_analysis) {
       fclose(fopen((mail_path + std::string(".empty")).c_str(), "w"));
+    } else {
+      sqlite3_stmt *dump_json_stmt = NULL;
+      if (setup_stmt(
+        dump_json_stmt, ANALYZE_DUMP_DATA_TO_JSON_SQL, "(dump_json)")) {
+        SQLITE3_BIND_START
+          BIND_OFFSET(dump_json_stmt);
+          NAMED_BIND_TEXT(dump_json_stmt, ":user", user);
+          if (BIND_FAILED) {
+            post_analyze();
+            continue;
+          }
+        SQLITE3_BIND_END
+        if (step_and_verify(dump_json_stmt, 1, "(dump_json)")) {
+          SQLITE3_FETCH_COLUMNS_START("data")
+          SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, dump_json_stmt)
+            if (i > 0) {
+              break;
+            }
+            if (first_json_entry) {
+              fputc(',', json_fp);
+            } else {
+              first_json_entry = 1;
+            }
+            fputs((const char *)SQLITE3_FETCH_STR(), json_fp);
+          SQLITE3_FETCH_COLUMNS_END
+        }
+        sqlite3_finalize(dump_json_stmt);
+      }
     }
     post_analyze();
   }
+  fputs("}}", json_fp);
+  fclose(json_fp);
   #undef OP
   #undef OPACTIVEUSER
 }

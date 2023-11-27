@@ -23,7 +23,7 @@ const char *PRE_ANALYZE_SQL = SQLITE_CODEBLOCK(
 const char *ANALYZE_CREATE_BASE_TABLES[] = {
   /*[0]*/SQLITE_CODEBLOCK(
   CREATE TABLE inmem.measurements AS
-    SELECT measurements.*, mem AS mem_limit,
+    SELECT measurements.*,
            max(recordid) OVER win AS latest_recordid
     FROM measurements, watcher, jobinfo
     WHERE jobinfo.user IS :user
@@ -32,6 +32,25 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND measurements.jobid == jobinfo.jobid
     WINDOW win AS (PARTITION BY measurements.jobid, measurements.stepid);
   ), /*[1]*/SQLITE_CODEBLOCK(
+    CREATE TABLE inmem.recombined_jobinfo AS
+    SELECT
+      jobid, stepid,
+      first_value(mem) OVER win AS mem_limit,
+      first_value(user) OVER win AS user,
+      first_value(name) OVER win || '/' || iif(name IS NULL, 'null', name)
+        AS name,
+      first_value(submit_line) OVER win AS submit_line,
+      first_value(ngpu) OVER win AS ngpu,
+      first_value(nnodes) OVER win AS nnodes,
+      started_at - first_value(started_at) OVER win AS step_start_offset,
+      ended_at - first_value(started_at) OVER win AS step_end_offset,
+      first_value(ended_at - started_at) OVER win AS job_length,
+      ifnull(timelimit, first_value(timelimit) OVER win) AS timelimit,
+      peak_res_size
+    FROM jobinfo
+    WHERE user IS NULL OR user IS :user
+    WINDOW win AS (PARTITION BY jobid ORDER BY stepid NULLS FIRST)
+  ), /*[2]*/SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.timeseries AS
     WITH grouped_measurements AS MATERIALIZED (
@@ -47,60 +66,45 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       )
       SELECT *, measurement_batch
         FROM inmem.measurements JOIN batch_ranges USING (recordid)
-    ), recombined_jobinfo AS MATERIALIZED (
-      SELECT
-        jobid, stepid,
-        first_value(user) OVER win AS user,
-        first_value(name) OVER win || '/' || iif(name IS NULL, 'null', name)
-          AS name,
-        first_value(submit_line) OVER win AS submit_line,
-        first_value(ngpu) OVER win AS ngpu,
-        first_value(nnodes) OVER win AS nnodes,
-        started_at - first_value(started_at) OVER win AS step_start_offset,
-        ended_at - first_value(started_at) OVER win AS step_end_offset,
-        first_value(ended_at - started_at) OVER win AS job_length,
-        ifnull(timelimit, first_value(timelimit) OVER win) AS timelimit,
-        peak_res_size
-      FROM jobinfo
-      WHERE user IS NULL OR user IS :user
-    WINDOW win AS (PARTITION BY jobid ORDER BY stepid NULLS FIRST)
-  ) SELECT
-    *,
-    user_sec * 1e6 + user_usec
-      - lag(user_sec * 1e6 + user_usec, 1, user_sec * 1e6 + user_usec)
-    OVER win AS delta_user_time,
-    sys_sec * 1e6 + sys_usec
-      - lag(sys_sec * 1e6 + sys_usec, 1, sys_sec * 1e6 + sys_usec)
-    OVER win AS delta_sys_time,
-    res_size - lag(res_size, 1, res_size) OVER win AS delta_res_size,
-    res_size - first_value(res_size) OVER win AS delta_res_size_from_start,
-    lag(res_size) OVER win IS NOT NULL AND
-    res_size - (max(res_size) OVER win + min(res_size) OVER win) / 2 >= 0
-    IS NOT
-    lag(res_size) OVER win
-      - (max(res_size) OVER win + min(res_size) OVER win) / 2
-    >= 0
-    AS delta_res_size_from_midline,
-    minor_pagefault - lag(minor_pagefault, 1, minor_pagefault)
-    OVER win AS delta_minor_pagefault
-    FROM grouped_measurements JOIN recombined_jobinfo USING (jobid, stepid)
-       /*LEFT*/ JOIN job_step_cpu_available USING (jobid, stepid, watcherid)
-       JOIN (SELECT *, lead(start, 1, 2e9) OVER win AS endval
-               FROM scrape_freq_log_internal WINDOW win AS (ORDER BY start))
-       ON (recordid >= start AND recordid < endval)
+    )
+    SELECT
+      *,
+      user_sec * 1e6 + user_usec
+        - lag(user_sec * 1e6 + user_usec, 1, user_sec * 1e6 + user_usec)
+      OVER win AS delta_user_time,
+      sys_sec * 1e6 + sys_usec
+        - lag(sys_sec * 1e6 + sys_usec, 1, sys_sec * 1e6 + sys_usec)
+      OVER win AS delta_sys_time,
+      res_size - lag(res_size, 1, res_size) OVER win AS delta_res_size,
+      res_size - first_value(res_size) OVER win AS delta_res_size_from_start,
+      lag(res_size) OVER win IS NOT NULL AND
+      res_size - (max(res_size) OVER win + min(res_size) OVER win) / 2 >= 0
+      IS NOT
+      lag(res_size) OVER win
+        - (max(res_size) OVER win + min(res_size) OVER win) / 2
+      >= 0
+      AS delta_res_size_from_midline,
+      minor_pagefault - lag(minor_pagefault, 1, minor_pagefault)
+        OVER win AS delta_minor_pagefault
+    FROM grouped_measurements
+           JOIN inmem.recombined_jobinfo USING (jobid, stepid)
+           /*LEFT*/ JOIN job_step_cpu_available USING (jobid, stepid, watcherid)
+           JOIN (SELECT *, lead(start, 1, 2e9) OVER win AS endval
+                   FROM scrape_freq_log_internal WINDOW win AS (ORDER BY start))
+                      ON (recordid >= start AND recordid < endval)
     WHERE
-    recombined_jobinfo.jobid == grouped_measurements.jobid
-    AND recombined_jobinfo.stepid == grouped_measurements.stepid
+      inmem.recombined_jobinfo.jobid == grouped_measurements.jobid
+      AND inmem.recombined_jobinfo.stepid == grouped_measurements.stepid
     WINDOW win AS (
       PARTITION BY
         grouped_measurements.jobid,
         grouped_measurements.stepid,
         measurement_batch
     );
-  ),/*[2]*/SQLITE_CODEBLOCK(
+  ), /*[3]*/SQLITE_CODEBLOCK(
 
   DELETE FROM inmem.measurements;
-  ), /*[3]*/SQLITE_CODEBLOCK(
+  ), /*[4]*/SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.sys_ratio AS
     WITH systime_ratio_base AS MATERIALIZED (
@@ -136,7 +140,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       sys_ratio_1_3 + sys_ratio_2_3 * 2 + sys_ratio_gt_1 * 3
         AS major_ratio_unified_tot
       FROM systime_ratio_base;
-  ), /*[4]*/SQLITE_CODEBLOCK(
+  ), /*[5]*/SQLITE_CODEBLOCK(
   
   CREATE TABLE inmem.gpu_usage_base AS
     WITH gpu_usage_base AS MATERIALIZED (
@@ -189,7 +193,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND gpu_measurements_flagged.batch == ts.gpu_measurement_batch
           AND gpu_measurements_flagged.jobid == ts.jobid
           AND gpu_measurements_flagged.stepid == ts.stepid
-    ) SELECT gpu_usage_base.jobid, gpu_usage_base.stepid, latest_recordid, name,
+    ) SELECT gpu_usage_base.jobid, gpu_usage_base.stepid,
+       latest_recordid, name, target_node, gpuid AS gpuid_raw,
        iif(nnodes > 1, target_node || '/', '') || gpuid AS gpuid,
        submit_line, count(util) AS measurement_cnt,
        avg(util) AS avg_util, sum(zero_segment_length) AS zero_util_cnt,
@@ -310,47 +315,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         AS low_concurrency,
       1.0 * total(ncpu_in_use * cnt_cpu) / node_tot < 0.5 * max(ncpu)
         AS cpu_flagged
-    FROM (
-    SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
-          ngpu_in_use, count(*) OVER win AS cnt_gpu, ts.ngpu,
-          NULL AS ncpu_in_use, NULL AS cnt_cpu, NULL AS ncpu,
-          count(*) OVER win_super AS node_tot, nnodes AS alloc_nnodes
-    FROM inmem.timeseries AS ts, watcher,
-        (SELECT batch, count(gpuid) AS ngpu_in_use
-          FROM gpu_measurements GROUP BY batch, gpuid
-          UNION SELECT NULL, 0)
-    WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
-          AND ts.latest_recordid > :offset_start
-          AND ts.latest_recordid <= :offset_end
-    WINDOW win AS
-            (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
-          win_super AS
-            (PARTITION BY ts.jobid, ts.stepid, target_node)
-    UNION
-    SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
-          NULL AS ngpu_in_use, NULL AS cnt_gpu, NULL AS ngpu,
-          iif(the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1, the_ncpu_in_use, NULL)
-            AS ncpu_in_use,
-          count(*) OVER win AS cnt_cpu,
-          the_ncpu AS ncpu,
-          count(*) FILTER (WHERE the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1)
-            OVER win_super AS node_tot,
-          nnodes AS alloc_nnodes
-    FROM inmem.timeseries AS ts, watcher, (
-            SELECT recordid AS the_recordid, ncpu AS the_ncpu,
-                  ceil(1.0 *
-                    (delta_user_time + delta_sys_time)
-                     / (scrape_interval * 1e6)) AS the_ncpu_in_use
-            FROM inmem.timeseries
-          )
-    WHERE watcher.id == watcherid AND the_recordid == recordid
-          AND ts.latest_recordid > :offset_start
-          AND ts.latest_recordid <= :offset_end
-    WINDOW win AS
-            (PARTITION BY ts.jobid, ts.stepid, target_node, the_ncpu_in_use),
-          win_super AS
-            (PARTITION BY ts.jobid, ts.stepid, target_node)
-    )
+    FROM inmem.gpucpu_usage
     GROUP BY jobid, stepid, node
     WINDOW win AS
       (PARTITION BY jobid, stepid, node
@@ -366,7 +331,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
   ) AS jupyterinfo
   WHERE gpucpuinfo.jobid == ts.jobid AND gpucpuinfo.stepid == ts.stepid
         AND jupyterinfo.jobid == ts.jobid AND jupyterinfo.stepid == ts.stepid;
-), /*[6]*/
+), /*[8]*/
     "INSERT INTO inmem.resource_usage("
     "jobid, stepid, name, peak_res_size, mem_limit, timespan, nnode,"
     "ncpu, cpu_usage, problem)"
@@ -412,7 +377,97 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND jobinfo.jobid == jobids.jobid
           AND jobinfo.jobid == tot_time_info.jobid
     )
+), /*[9]*/SQLITE_CODEBLOCK(
+  CREATE TABLE inmem.problem_listing(
+    jobid INT,
+    stepid INT,
+    problem TEXT,
+    PRIMARY KEY (jobid, stepid, problem)
+  )
 ), 0};
+
+const char *ANALYZE_INSERT_PROBLEM_LISTING_SQL = SQLITE_CODEBLOCK(
+  INSERT OR IGNORE INTO inmem.problem_listing(jobid, stepid, problem)
+    VALUES(:jobid, :stepid, :problem);
+);
+
+const char *ANALYZE_DUMP_DATA_TO_JSON_SQL = SQLITE_CODEBLOCK(
+  SELECT
+    trim(
+      json_object(:user, json_object(
+        'JobInfo', json(jobinfo_data), 'Problems', json(problems_data),
+        'MemUsage', json(memusage_data), 'Resources', json(resources_data),
+        'GPU', json(gpu_usage_data), 'AppUsage', json(application_usage_data),
+        'SysTimeRatio', json(sys_time_ratio_data)
+      )),
+    '{}') || '}'
+    AS data
+  FROM (SELECT (
+    SELECT json_group_array(json_object(
+      'Job', ts.jobid, 'Name', jobinfo.name, 'NodeCnt', ts.nnodes,
+      'JobLength', ts.job_length, 'TimeLimit', ts.timelimit
+    )) AS jobinfo_data
+    FROM (SELECT * FROM inmem.timeseries
+            GROUP BY jobid, stepid
+            HAVING latest_recordid > :offset_start
+                   AND latest_recordid <= :offset_end
+          ) AS ts
+          LEFT JOIN jobinfo
+            ON (jobinfo.jobid == ts.jobid AND jobinfo.stepid IS NULL)
+  ) AS jobinfo_data, (
+    SELECT json_group_array(json_object(
+      'Job', jobid, 'Step', stepid,
+      'PeakRssSize', peak_res_size, 'MemLimit', mem_limit
+    )) AS memusage_data FROM inmem.resource_usage
+  ) AS memusage_data, (
+    SELECT json_group_array(json_object(
+      'Job', jobid, 'Step', stepid, 'App', application
+    )) FROM application_usage
+        JOIN (
+          SELECT jobid, stepid FROM inmem.timeseries
+          GROUP BY jobid, stepid
+          HAVING latest_recordid > :offset_start
+                 AND latest_recordid <= :offset_end
+        ) USING (jobid, stepid)
+  ) AS application_usage_data, (
+    SELECT json_group_array(json(data)) AS problems_data FROM (
+    SELECT json_patch(
+      json_object('Job', jobid, 'Step', stepid),
+      json_group_object(problem, 1))
+    AS data
+    FROM inmem.problem_listing
+    GROUP BY jobid, stepid)
+  ) AS problems_data, (
+    SELECT json_group_array(json_object(
+      'Job', jobid, 'Step', stepid, 'Node', node,
+      'GPUCPUEntryRatio', 1.0 * ifnull(cnt_cpu, cnt_gpu) / node_tot,
+      'TotGPUCPUSamples', node_tot,
+      'GPUCPUEntryType', iif(ncpu IS NULL, 'GPU', 'CPU'),
+      'AllocCPU', ncpu, 'AllocGPU', ngpu,
+      'CPUInUse', ncpu_in_use, 'GPUInUse', ngpu_in_use
+    )) AS resources_data
+      FROM inmem.gpucpu_usage
+      WHERE ngpu IS NOT 0 AND ifnull(ncpu_in_use, ngpu_in_use) IS NOT NULL
+  ) AS resources_data, (
+    SELECT json_group_array(json_object(
+      'Job', jobid, 'Step', stepid, 'Node', target_node, 'GPUID', gpuid_raw,
+      'AvgGPUUtil', avg_util,
+      'TotGPUSamples', measurement_cnt, 'CntZeroGPUUtil', zero_util_cnt,
+      'CntLowGPUUtil', low_util_cnt,
+      'LongestNoGPUUtil', longest_continuous_zero_util,
+      'AvgGPUClockMHz', avg_clock, 'AvgGPUPowerUsageWatt', avg_power_usage,
+      'AvgGPUTempC', avg_temperature
+    )) AS gpu_usage_data FROM inmem.gpu_usage_base
+    WHERE latest_recordid > :offset_start AND latest_recordid <= :offset_end
+  ) AS gpu_usage_data, (
+    SELECT json_group_array(json_object(
+      'Job', jobid, 'Step', stepid, 'TotSysTimeRatioSamples', tot_in_batch,
+      '10%~33%', sys_ratio_1_10, '33%~66%', sys_ratio_1_3,
+      '66%~100%', sys_ratio_2_3, '>100%', sys_ratio_gt_1
+    )) AS sys_time_ratio_data FROM inmem.sys_ratio
+    WHERE latest_recordid > :offset_start AND latest_recordid <= :offset_end
+  ) AS sys_time_ratio_data);
+);
 
 #define _FILTER_LATEST_RECORD_SQL \
   "latest_recordid > :offset_start AND latest_recordid <= :offset_end"
