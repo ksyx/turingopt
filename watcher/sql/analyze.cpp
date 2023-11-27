@@ -360,7 +360,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     ORDER BY gpu_flagged DESC, cpu_flagged DESC
   ) AS gpucpuinfo, (
     SELECT jobid, stepid,
-          max(application IN ('jupyter-notebook', 'jupyter-lab')) AS is_jupyter
+          max(application IN ('jupyter-noteboo', 'jupyter-lab')) AS is_jupyter
     FROM application_usage
     GROUP BY jobid, stepid
   ) AS jupyterinfo
