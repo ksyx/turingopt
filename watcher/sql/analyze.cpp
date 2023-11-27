@@ -200,15 +200,58 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       FROM gpu_usage_base, watcher
       WHERE watcher.id == watcherid
       GROUP BY gpu_usage_base.jobid, gpu_usage_base.stepid, target_node, gpuid;
-), /*[5]*/ SQLITE_CODEBLOCK(
+), /*[6]*/SQLITE_CODEBLOCK(
+  CREATE TABLE inmem.gpucpu_usage AS
+  SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
+        ngpu_in_use, count(*) OVER win AS cnt_gpu, ts.ngpu,
+        NULL AS ncpu_in_use, NULL AS cnt_cpu, NULL AS ncpu,
+        count(*) OVER win_super AS node_tot, nnodes AS alloc_nnodes
+  FROM inmem.timeseries AS ts, watcher,
+      (SELECT batch, count(gpuid) AS ngpu_in_use
+        FROM gpu_measurements GROUP BY batch, gpuid
+        UNION SELECT NULL, 0)
+  WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
+        AND ts.latest_recordid > :offset_start
+        AND ts.latest_recordid <= :offset_end
+  WINDOW win AS
+          (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
+        win_super AS
+          (PARTITION BY ts.jobid, ts.stepid, target_node)
+  UNION
+  SELECT DISTINCT ts.jobid, ts.stepid, target_node AS node,
+        NULL AS ngpu_in_use, NULL AS cnt_gpu, NULL AS ngpu,
+        iif(the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1, the_ncpu_in_use, NULL)
+          AS ncpu_in_use,
+        count(*) OVER win AS cnt_cpu,
+        the_ncpu AS ncpu,
+        count(*) FILTER (WHERE the_ncpu_in_use BETWEEN 1 AND the_ncpu + 1)
+          OVER win_super AS node_tot,
+        nnodes AS alloc_nnodes
+  FROM inmem.timeseries AS ts, watcher, (
+          SELECT recordid AS the_recordid, ncpu AS the_ncpu,
+                ceil(1.0 *
+                  (delta_user_time + delta_sys_time)
+                    / (scrape_interval * 1e6)) AS the_ncpu_in_use
+          FROM inmem.timeseries
+        )
+  WHERE watcher.id == watcherid AND the_recordid == recordid
+        AND ts.latest_recordid > :offset_start
+        AND ts.latest_recordid <= :offset_end
+  WINDOW win AS
+          (PARTITION BY ts.jobid, ts.stepid, target_node, the_ncpu_in_use),
+        win_super AS
+          (PARTITION BY ts.jobid, ts.stepid, target_node)
+), /*[7]*/ SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.resource_usage AS
   SELECT ts.jobid, ts.stepid, name,
         format('[%.2lf%%, %.2lf%%]',
                 (1.0 * step_start_offset) / job_length * 100,
                 (1.0 * step_end_offset) / job_length * 100) AS timespan,
-        NULL AS nnode, NULL AS ncpu, cpu_usage, ngpu, gpu_usage,
-        peak_res_size, mem_limit, sample_cnt,
+        nnodes AS nnode, NULL AS ncpu, cpu_usage, ngpu, gpu_usage,
+        peak_res_size, sample_cnt,
+        mem_limit / iif(peak_res_size == peak_res_size_slurm, 1, nnodes)
+          AS mem_limit,
         peak_res_size == peak_res_size_slurm AS is_res_size_from_slurm,
         rtrim(iif(is_jupyter, 'jupyter | ', '')
               || iif(low_concurrency, 'low_concurrency | ', '')
@@ -218,7 +261,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
               , '| ') AS problem
   FROM (SELECT
     jobid, stepid, name, submit_line, job_length, ngpu,
-    step_start_offset, step_end_offset, mem_limit,
+    step_start_offset, step_end_offset, nnodes, mem_limit,
     count(recordid) AS sample_cnt,
     max(peak_res_size, max(res_size)) AS peak_res_size,
     peak_res_size AS peak_res_size_slurm
@@ -468,10 +511,13 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
            AS name,
          :offset_end - :offset_start AS unused,
          format('%.2lf%% (%d / %d MB)',
-                1.0 * agg_peak_res_size / agg_mem_limit * 100,
+                1.0 * agg_peak_res_size / agg_mem_limit /
+                  iif(peak_res_size IS peak_res_size_slurm
+                      OR stepid IS NOT NULL, 1, nnode) * 100,
                 agg_peak_res_size / 1024 / 1024,
                 agg_mem_limit / 1024 / 1024
-                  / iif(peak_res_size IS peak_res_size_slurm, 1, nnode))
+                  / iif(peak_res_size IS peak_res_size_slurm
+                        OR stepid IS NOT NULL, 1, nnode))
           || x'0a' || 'source: '
           || iif(agg_peak_res_size IS peak_res_size_slurm, 'SLURM', 'samples')
            AS mem_usage, timespan, cpu_usage, ngpu, gpu_usage,

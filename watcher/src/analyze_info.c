@@ -109,10 +109,6 @@ const char *analyze_letter_stylesheet = STRINGIFY_BLOCK(
 
 const struct analyze_result_field_t resource_usage_fields[] = {
   job_info_fields,  {
-    .sql_column_name = "unused",
-    .printed_name = NULL,
-    .help = NULL
-  }, {
     .sql_column_name = "mem_usage",
     .printed_name = "Memory Usage",
     .help = NULL,
