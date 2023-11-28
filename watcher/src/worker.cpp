@@ -720,7 +720,7 @@ static inline void fetch_proc_stats (
             cgroup_path += std::string("/cpuset.effective_cpus");
             fclose(fp);
             fp = fopen(cgroup_path.c_str(), "r");
-            fprintf(stderr, "%s\n", cgroup_path.c_str());
+            DEBUGOUT(fprintf(stderr, "%s\n", cgroup_path.c_str());)
             int val[2] = {0, 0}; bool cur_side = 0; int ncpu = 0;
             while (fp && (cnt = fread(buf, 1, READ_BUF_SIZE, fp))) {
               buf[cnt] = '\0';
@@ -733,7 +733,6 @@ static inline void fetch_proc_stats (
                   if (!cur_side) {
                     val[1] = val[0];
                   }
-                  fprintf(stderr, "%d %d\n", val[0],val[1]);
                   ncpu += val[1] - val[0] + 1;
                   val[0] = val[1] = 0;
                   cur_side = 0;
@@ -741,7 +740,6 @@ static inline void fetch_proc_stats (
                     break;
                   }
                 } else {
-                  fprintf(stderr, "<%c>", c);
                   val[cur_side] = val[cur_side] * 10 + c - '0';
                 }
                 cur++;
