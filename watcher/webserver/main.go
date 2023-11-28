@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,11 +16,18 @@ import (
 	"go.uber.org/zap"
 )
 
+type ResultRaw struct {
+	Started int64                  `json:"started"`
+	Updated int64                  `json:"updated"`
+	Data    map[string]interface{} `json:"data"`
+}
+
 type Result struct {
 	// map[machine_name]ContentID
 	CommonContent map[string]int `json:"common_content"`
 	// map[machine_name](map[user]HTML)
 	UserContent map[string](map[string]string) `json:"user_content"`
+	RawData     ResultRaw                      `json:"-"`
 }
 
 type CommonContentDedup struct {
@@ -47,57 +56,65 @@ var seenUser map[string]bool
 
 var logger *zap.Logger
 
-var ErrorMismatch = errors.New("input mismatch from expectation")
+func genMismatchError(msg string) error {
+	return errors.New(msg + ": input mismatch from expectation")
+}
 
-func loadResult(dir string, id int, name string) error {
-	dir = dir + "/" + name + ".mail"
-	f, err := os.Open(dir + ".header")
-	if err != nil {
-		return err
-	}
-	bytes, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-	content := string(bytes)
-	ind := strings.Index(content, "<head>")
+func loadResult(headerText string, bodyText string, id int, name string) error {
+	ind := strings.Index(headerText, "<head>")
 	if ind == -1 {
-		return ErrorMismatch
+		return genMismatchError("find_head")
 	}
-	content = content[ind:]
-	f.Close()
-	f, err = os.Open(dir)
-	if err != nil {
-		return err
-	}
-	bytes, err = io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-	content = content + string(bytes)
+	headerText = headerText[ind:]
+	bodyText = headerText + bodyText
+	content := bodyText
 	strid := fmt.Sprint(id)
-	content = strings.ReplaceAll(content, strid+":"+name, strid+":json")
-	f.Close()
+	content = strings.ReplaceAll(content, strid+":"+name, strid+":web")
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(content))
 	if err != nil {
 		return err
 	}
-	cur := doc.Find("body").First().Children().First()
-	secname := "Greeting"
-	machine_name := "greeting"
 	exact := map[string]bool{
 		"greeting": true,
 		"news":     true,
 		"usage":    true,
 		"footer":   true,
 	}
+	cur := doc.Find("a[name$=\"_problems\"]").Each(
+		func(_ int, sel *goquery.Selection) {
+			tag, _ := sel.First().Attr("name")
+			tag = strings.TrimSuffix(tag, "_problems")
+			exact[tag] = true
+		})
+	footer_parent := doc.Find("a[name=\"footer\"]").Parent()
+	breakpoints := doc.Find("h1, h2, h3, h4, h5, h6").Union(footer_parent)
+	cur = doc.Find("body>*").First()
+	greet_html, err := cur.Html()
+	if err != nil {
+		return err
+	}
+	cur.SetHtml("<a name=\"greeting\"></a>" + greet_html)
+	secname := "Greeting"
+	machine_name := "greeting"
 	suffixes := []string{
 		"_metrics",
 		"_problems",
 	}
 	for cur.Length() > 0 {
-		sel := cur.NextUntil("h1, h2, h3, h4, h5, h6, a[name=\"footer\"]")
+		var sel *goquery.Selection
+		htmltail := ""
+		if machine_name == "footer" {
+			secname = "Footer"
+			lastch := doc.Find("body").Children().Last()
+			htmltail, err = goquery.OuterHtml(doc.Find("body").Children().Last())
+			if err != nil {
+				return err
+			}
+			sel = cur.NextUntilSelection(lastch)
+		} else {
+			sel = cur.NextUntilSelection(breakpoints)
+		}
 		htmlcur, err := goquery.OuterHtml(cur)
 		if err != nil {
 			return err
@@ -106,7 +123,7 @@ func loadResult(dir string, id int, name string) error {
 		if err != nil {
 			return err
 		}
-		html := htmlcur + htmlsel
+		html := htmlcur + htmlsel + htmltail
 		_, ok := exact[machine_name]
 		if !ok {
 			for _, suffix := range suffixes {
@@ -135,56 +152,89 @@ func loadResult(dir string, id int, name string) error {
 		resultSet.NameMapping[machine_name] = secname
 		cur = sel.Last().Next()
 		secname = cur.Text()
-		machine_name, ok = cur.Attr("name")
+		machine_name, ok = cur.Children().First().Attr("name")
 		if !ok {
-			machine_name, ok = cur.Children().First().Attr("name")
-			if !ok {
-				return ErrorMismatch
-			}
-		} else {
-			secname = "Footer"
+			return genMismatchError("get_machine_name")
 		}
 	}
 	seenUser[name] = true
 	return nil
 }
 
-func loadResultDir(dir string, id int) error {
-	dir = analysisResultPathBase + "/" + dir
-	entries, err := os.ReadDir(dir)
+func loadResultTar(tarReader *tar.Reader, id int) error {
+	info, err := tarReader.Next()
 	if err != nil {
 		return err
 	}
-	last := ""
-	action := func(user string) error {
-		if user != "" {
-			err := loadResult(dir, id, user)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
+	if info.Name != "raw.json" {
+		return genMismatchError("find_raw_json")
+	}
+	data, err := io.ReadAll(tarReader)
+	if err != nil {
+		return err
 	}
 	result := Result{
 		CommonContent: make(map[string]int),
 		UserContent:   make(map[string](map[string]string)),
+		RawData:       ResultRaw{},
+	}
+	err = json.Unmarshal(data, &result.RawData)
+	if err != nil {
+		return err
 	}
 	resultSet.Results[id] = result
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			name := entry.Name()
-			user := strings.TrimSuffix(name, ".mail")
-			if len(user) != len(name) {
-				if last != "" {
-					loadResult(dir, id, last)
-				}
-				last = user
-			} else if strings.HasSuffix(name, ".empty") {
-				last = ""
+	curName := ""
+	var headerText []byte
+	var bodyText []byte
+	action := func(name string) error {
+		if curName != "" {
+			return loadResult(string(headerText), string(bodyText), id, name)
+		}
+		return nil
+	}
+	for {
+		info, err := tarReader.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				return err
 			}
 		}
+		name := info.Name
+		ind := strings.IndexRune(name, '.')
+		if ind == -1 || ind == len(name)-1 {
+			return genMismatchError("find_filename_ext")
+		}
+		ext := name[ind:]
+		name = name[0:ind]
+		for i := len(ext) - 2; i >= 0; i-- {
+			if ext[i] == '.' {
+				ind = i
+				break
+			}
+		}
+		ext = ext[ind+1:]
+		switch ext {
+		case "header":
+			if name != curName {
+				action(curName)
+				curName = name
+			}
+			headerText, err = io.ReadAll(tarReader)
+			if err != nil {
+				return err
+			}
+		case "mail":
+			bodyText, err = io.ReadAll(tarReader)
+			if err != nil {
+				return err
+			}
+		case "empty":
+			curName = ""
+		}
 	}
-	action(last)
+	action(curName)
 	return nil
 }
 
@@ -201,23 +251,46 @@ func main() {
 	resultsAvailable = make(map[int]bool)
 	seenUser = make(map[string]bool)
 	for _, d := range dirlist {
-		if d.IsDir() {
+		if d.Type().IsRegular() {
 			name := d.Name()
-			id, err := strconv.Atoi(name)
-			if err != nil {
+			namelen := len(name)
+			name = strings.TrimSuffix(name, ".tar.gz")
+			if namelen == len(name) {
 				continue
 			}
-			if err := loadResultDir(name, id); err != nil {
+			id, err := strconv.Atoi(name)
+			if err != nil {
 				logger.Error(err.Error())
 				continue
 			}
+			fileReader, err := os.Open(analysisResultPathBase + "/" + d.Name())
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+			gzipReader, err := gzip.NewReader(fileReader)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+			tarReader := tar.NewReader(gzipReader)
+			if err := loadResultTar(tarReader, id); err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+			gzipReader.Close()
+			fileReader.Close()
 			resultsAvailable[id] = true
 		}
 	}
-	jsonbytes, err := json.MarshalIndent(resultSet, "", "  ")
-	if err != nil {
-		logger.Fatal(err.Error())
+	const dump_data_json_only = false
+	if dump_data_json_only {
+		jsonbytes, err := json.MarshalIndent(resultSet, "", "  ")
+		if err != nil {
+			logger.Fatal(err.Error())
+		}
+		fmt.Println(string(jsonbytes))
+		return
 	}
-	fmt.Println(string(jsonbytes))
 	//serve()
 }
