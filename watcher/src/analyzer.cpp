@@ -545,8 +545,27 @@ void do_analyze() {
     sqlite3_exec(SQL_CONN_NAME, "ROLLBACK;", NULL, NULL, NULL);
   }
 
-  path += "/" + std::to_string(offset_start);
+  std::string out_tar_final_filename
+    = path + std::string("/") + std::to_string(offset_start) + ".tar.gz";
+
+  std::string out_tar_tmp_filename = out_tar_final_filename + ".tmp";
+
+  path += "/working";
   makedir(1);
+
+  std::vector<std::string> tar_command {
+    "tar", "-czf", out_tar_tmp_filename, "-C", path, "--remove-files"
+  };
+  const auto empty_tar_command_length = tar_command.size();
+  const auto analyze_fopen = [&tar_command](std::string path) {
+    auto fp = fopen(path.c_str(), "w");
+    if (!fp) {
+      perror("open");
+      exit(1);
+    }
+    tar_command.push_back(std::string(basename(path.c_str())));
+    return fp;
+  };
   SQLITE3_BIND_START
   BIND_OFFSET(list_active_user_stmt);
   if (BIND_FAILED) {
@@ -564,11 +583,7 @@ void do_analyze() {
   if (!verify_sqlite_ret(sqlite_ret, OPACTIVEUSER)) {
     return;
   }
-  auto json_fp = fopen((path + std::string("raw.json")).c_str(), "w");
-  if (!json_fp) {
-    perror("open");
-    exit(1);
-  }
+  auto json_fp = analyze_fopen(path + std::string("raw.json"));
   fprintf(json_fp, "{\"started\": %ld, \"updated\": %ld, \"data\":{",
                    program_start, time(NULL));
   bool first_json_entry = 0;
@@ -659,11 +674,7 @@ void do_analyze() {
     }
     bool has_analysis = 0;
     std::string mail_path = path + std::string(user) + std::string(".mail");
-    auto fp = fopen((mail_path + std::string(".header")).c_str(), "w");
-    if (!fp) {
-      perror("fopen");
-      continue;
-    }
+    auto fp = analyze_fopen(mail_path + std::string(".header"));
     if (analyze_letter_reply_address) {
       fprintf(fp, "Reply-To: %s\n", analyze_letter_reply_address);
     }
@@ -702,12 +713,7 @@ void do_analyze() {
     auto header_fp = fp;
     std::string analysis_id =
       std::to_string(offset_start) + std::string(":") + std::string(user);
-    fp = fopen(mail_path.c_str(), "w");
-    if (!fp) {
-      perror("fopen");
-      fputs("Error while composing the summary letter", header_fp);
-      goto finalize_loop;
-    }
+    fp = analyze_fopen(mail_path);
     fprintf(fp,
             HEADER_TEXT("news", "NEWS") "\n<table><td>%s</td></table>",
             analyze_news);
@@ -726,7 +732,6 @@ void do_analyze() {
                 "</body>",
                 analyze_letter_footer, analysis_id.c_str());
     fclose(fp);
-    finalize_loop:
     fp = header_fp;
     fputs(WRAPTAG(tr,
             TABLECELL(
@@ -783,7 +788,7 @@ void do_analyze() {
     }
     fclose(fp);
     if (!has_analysis) {
-      fclose(fopen((mail_path + std::string(".empty")).c_str(), "w"));
+      fclose(analyze_fopen(mail_path + std::string(".empty")));
     } else {
       sqlite3_stmt *dump_json_stmt = NULL;
       if (setup_stmt(
@@ -817,6 +822,40 @@ void do_analyze() {
   }
   fputs("}}", json_fp);
   fclose(json_fp);
+
+  const auto tar_command_length = tar_command.size();
+  if (tar_command_length > empty_tar_command_length) {
+    std::vector<char *> tar_exec_arglist(tar_command_length + 1);
+    for (int i = 0; i < tar_command_length; i++) {
+      tar_exec_arglist[i] = (char *) tar_command[i].c_str();
+    }
+    tar_exec_arglist[tar_command_length] = NULL;
+    const auto cpid = fork();
+    if (cpid == -1) {
+      perror("fork");
+      return;
+    } else if (cpid > 0) {
+      int wstatus;
+      do {
+        if (waitpid(cpid, &wstatus, WUNTRACED | WCONTINUED) == -1) {
+          perror("waitpid");
+          return;
+        }
+        if (WIFEXITED(wstatus) && !WEXITSTATUS(wstatus)) {
+          if (rename(
+                out_tar_tmp_filename.c_str(), out_tar_final_filename.c_str())) {
+            perror("rename");
+            return;
+          }
+        }
+      } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
+    } else {
+      if (execvp(tar_exec_arglist[0], tar_exec_arglist.data()) == -1) {
+        perror("execvp");
+        exit(1);
+      }
+    }
+  }
   #undef OP
   #undef OPACTIVEUSER
 }
