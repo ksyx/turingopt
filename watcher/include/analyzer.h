@@ -4,6 +4,7 @@
 
 #include "db_common.h"
 #include "analyze_info.h"
+#include "worker.h"
 
 #include <cmath>
 #include <sstream>

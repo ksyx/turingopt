@@ -544,9 +544,10 @@ void watcher() {
     }
     #endif
     freeze_queue();
+    close_slurmdb_conn();
+    do_analyze();
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
-    close_slurmdb_conn();
   } while (!run_once && (wait_until(timeout)));
   slurm_list_destroy(state_list);
   free(condition);

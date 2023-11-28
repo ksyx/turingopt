@@ -1,6 +1,5 @@
 #include "analyzer.h"
 
-static sqlite3_stmt *renew_analyzer_stmt;
 static sqlite3_stmt *list_active_user_stmt;
 static std::vector<sqlite3_stmt *> create_base_table_stmt;
 static int offset_start, offset_end;
@@ -60,7 +59,6 @@ static inline void reset_analyze_stmts(bool finalize) {
 
 void analyzer_finalize() {
   sqlite3_stmt *stmt_to_finalize[] = {
-    renew_analyzer_stmt,
     list_active_user_stmt,
     FINALIZE_END_ADDR
   };
@@ -519,6 +517,8 @@ bool do_analyze(
 }
 
 void do_analyze() {
+  sqlite3_stmt *renew_analyzer_stmt = NULL;
+  static time_t next_period_update = 0;
   std::string path = "analysis_result";
   auto makedir = [&path](bool allow_existing) {
     if (mkdir(path.c_str(), mkdir_mode)
@@ -533,9 +533,18 @@ void do_analyze() {
   setup_stmt(list_active_user_stmt, ANALYZE_LIST_ACTIVE_USERS,
              OPACTIVEUSER);
   #define OP "(renew_analyzer)"
+  sqlite3_begin_transaction();
   setup_stmt(renew_analyzer_stmt, RENEW_ANALYSIS_OFFSET_SQL, OP);
   step_renew(renew_analyzer_stmt, OP, offset_start, offset_end);
-  sqlite3_reset(renew_analyzer_stmt);
+  sqlite3_finalize(renew_analyzer_stmt);
+
+  if (time(NULL) > next_period_update) {
+    sqlite3_end_transaction();
+    next_period_update = time(NULL) + ANALYZE_PERIOD_LENGTH;
+  } else {
+    sqlite3_exec(SQL_CONN_NAME, "ROLLBACK;", NULL, NULL, NULL);
+  }
+
   path += "/" + std::to_string(offset_start);
   makedir(1);
   SQLITE3_BIND_START

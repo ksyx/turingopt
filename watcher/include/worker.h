@@ -28,6 +28,13 @@
 // The data is always there so just ensure new findings are alerted at a
 // reasonable frequency
 #define PRODUCTION_FREQ 1
+constexpr int ANALYZE_PERIOD_LENGTH = FREQ(
+#if PRODUCTION_FREQ
+7 * 24, 0, 0
+#else
+0, 5, 30
+#endif
+);
 constexpr int ACCOUNTING_RPC_INTERVAL = FREQ(
 #if PRODUCTION_FREQ
 1, 0, 0
@@ -111,6 +118,8 @@ bool build_slurmdb_conn();
 bool close_slurmdb_conn();
 
 bool log_scraper_freq(const char *sql, const char *op);
+
+void do_analyze();
 
 #undef FREQ
 #endif
