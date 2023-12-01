@@ -212,10 +212,12 @@ function zoomtable_button() {
   zoomtable()
 }
 
+event_pos = undefined
+
 function initialize_revealjs() {
   lasteventmouseover = undefined
   function jq_td_mouseleave(event) {
-    if (lasteventmouseover == "UL") {
+    if (lasteventmouseover == "UL" || event_pos == undefined) {
       return
     }
     lasteventmouseover = event.currentTarget.tagName
@@ -348,6 +350,7 @@ function initialize_revealjs() {
       ]
     }
   }).then( () => {
+    lastrevealstate = Reveal.getState()
     mapping = { "left": "up", "right": "down" }
     for (let t in mapping) {
       mapping[mapping[t]] = t
