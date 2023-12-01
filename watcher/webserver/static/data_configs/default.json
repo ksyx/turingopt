@@ -1,0 +1,312 @@
+{
+    "version": "2.7.0",
+    "plugin": "Datagrid",
+    "plugin_config": {
+        "columns": {
+            "Period": {
+                "timezone": "UTC",
+                "timestyle": "full"
+            },
+            "10~33%": {
+                "number_fg_mode": "disabled"
+            },
+            "33~66%": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "66~100%": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "AllocCPU": {
+                "fixed": 0,
+                "number_fg_mode": "disabled"
+            },
+            "AllocGPU": {
+                "bg_gradient": 8,
+                "fixed": 0,
+                "number_bg_mode": "gradient",
+                "number_fg_mode": "disabled"
+            },
+            "AvgGPUClockMHz": {
+                "number_fg_mode": "disabled"
+            },
+            "AvgGPUPowerUsageWatt": {
+                "number_fg_mode": "disabled"
+            },
+            "AvgGPUTempC": {
+                "number_fg_mode": "disabled"
+            },
+            "AvgGPUUtil": {
+                "number_fg_mode": "disabled"
+            },
+            "CPU Underusage": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "CPUInUse": {
+                "number_fg_mode": "disabled"
+            },
+            "CPUUsage%": {
+                "number_fg_mode": "disabled"
+            },
+            "Completely No Util": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "GPU Underusage": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "GPUUsage%": {
+                "number_fg_mode": "disabled"
+            },
+            "Investigate GPU Usage": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "JobLengthHour": {
+                "fixed": 1,
+                "number_fg_mode": "disabled"
+            },
+            "Jupyter Detected": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "LongestNoGPUUtil%": {
+                "number_fg_mode": "disabled"
+            },
+            "Low Compute Power": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "Low Concurrency": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "LowGPUUtil%": {
+                "number_fg_mode": "disabled"
+            },
+            "MemLimitMB": {
+                "fixed": 0,
+                "number_fg_mode": "disabled"
+            },
+            "Memory Oversubscribe": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "Memory Underusage": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "NodeCnt": {
+                "fixed": 0,
+                "number_fg_mode": "disabled"
+            },
+            "PeakMemUsage%": {
+                "number_fg_mode": "disabled"
+            },
+            "PeakRssSizeMB": {
+                "fixed": 0,
+                "number_fg_mode": "disabled"
+            },
+            "Ratios >100%": {
+                "bg_gradient": 400,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "System Time Ratio": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "TimeLimitHour": {
+                "fixed": 1,
+                "number_fg_mode": "disabled"
+            },
+            "Try Splitting": {
+                "bg_gradient": 200,
+                "neg_bg_color": "#ffa38f",
+                "neg_fg_color": "#ff471e",
+                "number_bg_mode": "gradient",
+                "pos_bg_color": "#ffa38f",
+                "pos_fg_color": "#ff471e"
+            },
+            "ZeroGPUUtil%": {
+                "number_fg_mode": "disabled"
+            }
+        },
+        "editable": false,
+        "scroll_lock": false
+    },
+    "settings": false,
+    "theme": "Pro Light",
+    "title": null,
+    "group_by": [
+        "Period",
+        "User",
+        "Name",
+        "Job",
+        "Step",
+        "Source",
+        "Node"
+    ],
+    "split_by": [],
+    "columns": [
+        "NodeCnt",
+        "JobLengthHour",
+        "TimeLimitHour",
+        "Low Concurrency",
+        "Low Compute Power",
+        "Jupyter Detected",
+        "[Mem]",
+        "Memory Oversubscribe",
+        "Memory Underusage",
+        "PeakMemUsage%",
+        "MemLimitMB",
+        "[CPU]",
+        "CPU Underusage",
+        "CPUUsage%",
+        "AllocCPU",
+        "[GPU]",
+        "Completely No Util",
+        "GPU Underusage",
+        "GPUUsage%",
+        "AllocGPU",
+        "AvgGPUUtil",
+        "ZeroGPUUtil%",
+        "LowGPUUtil%",
+        "LongestNoGPUUtil%",
+        "Investigate GPU Usage",
+        "Try Splitting",
+        "AvgGPUClockMHz",
+        "AvgGPUPowerUsageWatt",
+        "AvgGPUTempC",
+        "[SysTime]",
+        "System Time Ratio",
+        "(sysTime/userTime)",
+        "10~33%",
+        "33~66%",
+        "66~100%",
+        "Ratios >100%",
+        "App"
+    ],
+    "filter": [],
+    "sort": [],
+    "expressions": {
+        "JobLengthHour": "\"JobLength\" / 60 / 60",
+        "[CPU]": "'|'",
+        "MemLimitMB": "\"MemLimit\" / 1024 / 1024",
+        "ZeroGPUUtil%": "1.0 * \"CntZeroGPUUtil\" / \"TotGPUSamples\" * 100",
+        "66~100%": "1.0 * \"66%~100%\" / \"TotSysTimeRatioSamples\" * 100",
+        "[Mem]": "'|'",
+        "33~66%": "1.0 * \"33%~66%\" / \"TotSysTimeRatioSamples\" * 100",
+        "Ratios >100%": "1.0 * \">100%\" / \"TotSysTimeRatioSamples\" * 100",
+        "GPUUsage%": "100.0 * \"GPUInUse\" / \"AllocGPU\"",
+        "PeakRssSizeMB": "\"PeakRssSize\" / 1024 / 1024",
+        "10~33%": "1.0 * \"10%~33%\"/\"TotSysTimeRatioSamples\" * 100",
+        "LongestNoGPUUtil%": "1.0 * \"LongestNoGPUUtil\" / \"TotGPUSamples\" * 100",
+        "[SysTime]": "'|'",
+        "LowGPUUtil%": "1.0 * \"CntLowGPUUtil\" / \"TotGPUSamples\" * 100",
+        "TimeLimitHour": "\"TimeLimit\"/60",
+        "PeakMemUsage%": "1.0 * \"PeakRssSize\" / \"MemLimit\" * 100",
+        "CPUUsage%": "100.0 * \"CPUInUse\" / \"AllocCPU\"",
+        "(sysTime/userTime)": "' '",
+        "[GPU]": "'|'"
+    },
+    "aggregates": {
+        "66~100%": "avg",
+        "CPU Underusage": "avg",
+        "NodeCnt": "avg",
+        "10~33%": "avg",
+        "[SysTime]": "any",
+        "Try Splitting": "avg",
+        "Jupyter Detected": "avg",
+        "Low Compute Power": "avg",
+        "Completely No Util": "avg",
+        "AllocCPU": "avg",
+        "System Time Ratio": "avg",
+        "AvgGPUClockMHz": "avg",
+        "LowGPUUtil%": "avg",
+        "[CPU]": "any",
+        "(sysTime/userTime)": "any",
+        "AllocGPU": "avg",
+        "AvgGPUUtil": "avg",
+        "Memory Underusage": "avg",
+        "Low Concurrency": "avg",
+        "ZeroGPUUtil%": "avg",
+        "[Mem]": "any",
+        "JobLengthHour": "avg",
+        "AvgGPUTempC": "avg",
+        "PeakMemUsage%": "avg",
+        "Investigate GPU Usage": "avg",
+        "33~66%": "avg",
+        "App": "join",
+        "[GPU]": "any",
+        "CPUUsage%": [
+            "weighted mean",
+            "GPUCPUEntryRatio"
+        ],
+        "GPU Underusage": "avg",
+        "GPUUsage%": [
+            "weighted mean",
+            "GPUCPUEntryRatio"
+        ],
+        "MemLimitMB": "avg",
+        "Memory Oversubscribe": "avg",
+        "LongestNoGPUUtil%": "avg",
+        "TimeLimitHour": "avg",
+        "AvgGPUPowerUsageWatt": "avg",
+        "Ratios >100%": "avg"
+    }
+}

@@ -1,0 +1,177 @@
+<head>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@finos/perspective@2.7.0/dist/cdn/perspective.min.js"></script>
+  <script type="module"
+    src="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@2.7.0/dist/cdn/perspective-viewer.min.js"></script>
+  <script type="module"
+    src="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-datagrid@2.7.0/dist/cdn/perspective-viewer-datagrid.min.js"></script>
+  <script type="module"
+    src="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer-d3fc@2.7.0/dist/cdn/perspective-viewer-d3fc.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"
+    integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r"
+    crossorigin="anonymous"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"
+    integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.18/dist/css/bootstrap-select.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+
+  <link rel="stylesheet" crossorigin="anonymous"
+    href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@2.7.0/dist/css/pro.min.css" />
+</head>
+
+<body>
+	<nav class="navbar navbar-expand-lg bg-body-tertiary">
+    <div class="container-fluid" style="margin-left: 7.5vw">
+      <a class="navbar-brand" href="#">TuringReport</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarText"
+        aria-controls="navbarText" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarText">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Summary</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" aria-current="page" href="#">Data</a>
+          </li>
+          <li class="nav-item">
+            <select class="selectpicker" data-live-search="true" id="period_select" data-selected-text-format="count" multiple data-actions-box="true">
+              <option>Loading</option>
+            </select>
+          </li>
+          <li class="nav-item">
+            <select class="selectpicker" data-live-search="true" id="config_select">
+              <option>Loading</option>
+            </select>
+          </li>
+        </ul>
+        <span class="navbar-text" onclick="popup_tip_of_the_day()" id="tipoftheday_teaser">
+          Tip
+        </span>
+      </div>
+    </div>
+  </nav>
+  <perspective-viewer style="height:90vh; width: 85vw; margin-left:7.5vw;">
+    <div class="spinner-border" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </perspective-viewer>
+  <div class="modal fade" id="popup_modal" tabindex="-1" aria-labelledby="popup" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="popup_modal_title">Modal title</h1>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="popup_modal_message">
+          ...
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="./data.js"></script>
+  <script src="./requests.js"></script>
+  <script type="module">
+    import perspective from "https://cdn.jsdelivr.net/npm/@finos/perspective@2.7.0/dist/cdn/perspective.js";
+
+    const worker = perspective.worker();
+    const period_data = await fetch_periods()
+    const avail_periods = map_periods(period_data)
+    load_selector_options(produce_selector_html(avail_periods), 'period_select')
+    var last = Object.keys(avail_periods).slice(-1)
+
+    const response = await fetch("data_configs/listing.json", {
+      method: "GET",
+      headers: {
+        "Accept": "application/json"
+      }
+    })
+
+    if (!await verify_response(response)) {
+      throw "failed obtaining response"
+    }
+    const avail_configs = await response.json()
+    load_selector_options(produce_selector_html(avail_configs), 'config_select')
+    var tabledata = undefined
+    const update_config = async function() {
+      var configname = document.getElementById('config_select').value
+      const config_data = await fetch("data_configs/" + configname + ".json", {
+        method: "GET",
+        headers: {
+          "Accept": "application/json"
+        }
+      })
+      if (!await verify_response(response)) {
+        return
+      }
+      var config = await config_data.json()
+      var schema_cols = Object.keys(tabledata.schema)
+      var exprs = config['expressions']
+      var expr_cols = Object.keys(exprs)
+      config['columns'] = config['columns'].filter(
+        value => schema_cols.includes(value) || expr_cols.includes(value))
+      for (let col in config['aggregates']) {
+        if (!schema_cols.includes(col) && !expr_cols.includes(col)) {
+          delete config['aggregates'][col]
+        }
+      }
+      for (let expr in exprs) {
+        var match = exprs[expr].match(/".*?"/g)
+        if (match != null) {
+          var filt = match.filter(value => !schema_cols.includes(value.slice(1).slice(0, -1)))
+          if (filt.length) {
+            config['expressions'][expr] = "0/0"
+          }
+        }
+      }
+      await document.querySelector("perspective-viewer").restore(config)
+    }
+    async function load_data(period) {
+      const response = await fetch("/api/data", {
+        method: "POST",
+        headers: {
+          "Accept": "application/json"
+        },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({"periods": period.map(Number)}),
+      })
+
+      if (!await verify_response(response)) {
+        return
+      }
+      var data = await response.json()
+      data = data['payload']
+      tabledata = form_table(data, period_data);
+      var table = await worker.table(tabledata.schema);
+      await table.replace(tabledata.data)
+      const elem = document.querySelector("perspective-viewer");
+      await elem.load(table);
+      await update_config()
+      const view = await elem.getView()
+      await view.set_depth(1)
+      await elem.flush()
+    }
+    $('#period_select').on('changed.bs.select', async function() {
+      await load_data($('#period_select').val())
+    })
+    $('#period_select').selectpicker('val', String(last));
+
+    $('#config_select').on('changed.bs.select', update_config)
+    await update_config()
+  </script>
+  <div id="tipoftheday_container">
+  </div>
+  <script src="./tips.json"></script>
+  <script src="./tips.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+    integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+    crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/js/bootstrap-select.min.js"></script>
+
+</body>
