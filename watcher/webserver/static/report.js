@@ -411,8 +411,7 @@ function initialize_revealjs() {
             title = hashtarget.parent().parent().find("th").text()
             message = hashtarget.html().slice(hashtarget.children()[0].outerHTML.length)
           } else {
-            title = hashtarget.text()
-            title.slice(title.length / 2)
+            title = hashtarget[0].innerText
             message = hashtarget.parent().parent().parent()[0]['outerHTML']
           }
           showmessage(title, message)
