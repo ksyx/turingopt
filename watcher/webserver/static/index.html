@@ -85,6 +85,23 @@
     </div>
 
     <div class="container-fluid" style="width: 70vw; height:100%; display: inline-block;">
+      <div class="modal fade" id="popup_modal" tabindex="-1" aria-labelledby="popup" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h1 class="modal-title fs-5" id="popup_modal_title">Modal title</h1>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="popup_modal_message">
+              ...
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="reveal">
         <div class="slides">
           <div class="spinner-border" role="status">
@@ -93,45 +110,34 @@
         </div>
       </div>
       <div class="container-fluid" style="height:80vh; width: 92.6vw; display: inline-block;">
-        <script src="./out.json"></script>
-        <script>
-          req = new URL(window.location.href).searchParams;
-          avail_periods = Object.keys(data['results'])
-          reqperiod = req.get('period')
+        <script src="./requests.js"></script>
+        <script type="module">
+          var req = new URL(window.location.href).searchParams;
+          const period_data = await fetch_periods()
+          const avail_periods = map_periods(period_data)
+          var reqperiod = req.get('period')
           if (reqperiod == null) {
-            reqperiod = avail_periods.length - 1
+            reqperiod = Object.keys(avail_periods).slice(-1)
           }
-          report = produce_order(data['results'][avail_periods[reqperiod]], data['dedup'], data['name_mapping'], avail_periods)
+          const response = await fetch("/api/report?period=" + reqperiod, {
+            method: "GET",
+            headers: {
+              "Accept": "application/json"
+            }
+          })
+          if (!await verify_response(response)) {
+            throw "failed obtaining response"
+          }
+          var data = await response.json()
+          data = data['payload']
+          var report = produce_order(data['results'][reqperiod], data['dedup'], data['name_mapping'], avail_periods)
           document.getElementsByClassName("slides")[0].innerHTML = report['sectionHtml'];
           document.getElementById("sidebar-toc").innerHTML = report['tocHtml'];
-          function loadSelectorOptions(html, id) {
-            if (html != "") {
-              document.getElementById(id).innerHTML = html;
-            } else {
-              $("#" + id).parent().css("display", "none")
-            }
-          }
-          loadSelectorOptions(report['periodSelectHtml'], 'period_select')
-          loadSelectorOptions(report['userSelectHtml'], 'user_select')
+          load_selector_options(report['periodSelectHtml'], 'period_select')
+          load_selector_options(report['userSelectHtml'], 'user_select')
+          $('#period_select').selectpicker('val', String(reqperiod));
           initialize_revealjs()
         </script>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal fade" id="popup_modal" tabindex="-1" aria-labelledby="popup" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h1 class="modal-title fs-5" id="popup_modal_title">Modal title</h1>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body" id="popup_modal_message">
-          ...
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        </div>
       </div>
     </div>
   </div>

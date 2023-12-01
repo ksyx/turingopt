@@ -137,15 +137,6 @@ function produce_order(data, dedup, name_mapping, available_periods) {
     }
     cnt++
   }
-  function produce_selector_html(list) {
-    html = ""
-    if (list.length > 1) {
-      for (item in list) {
-        html += '<option value="' + item + '">' + list[item] + '</option>'
-      }
-    }
-    return html
-  }
   return {sectionHtml: sectionhtml, tocHtml: tochtml,
           userSelectHtml: produce_selector_html(userlist),
           periodSelectHtml: produce_selector_html(available_periods)}
@@ -290,11 +281,6 @@ function initialize_revealjs() {
   }
   jq_td_mouseover_handler = (event) => {jq_td_handler(event, jq_td_mouseover)}
   jq_td_mouseleave_handler = (event) => {jq_td_handler(event, jq_td_mouseleave)}
-  function showmessage(title, message) {
-    document.getElementById("popup_modal_title").innerText = title
-    document.getElementById("popup_modal_message").innerHTML = message
-    $("#popup_modal").modal('show')
-  }
 
   function updateSelectValue(select, val, performaction) {
     console.log('select', val)
@@ -441,8 +427,10 @@ function initialize_revealjs() {
         'user': userlist[reveal_state.indexv]
       })
     }
+    var req = new URL(window.location.href).searchParams;
     requser = req.get('user')
     reqsection = req.get('section')
+    reqperiod = req.get('period')
     console.log(requser, reqsection)
     if (reqperiod != null) {
       updateSelectValue(period_select_jq, reqperiod, false)
