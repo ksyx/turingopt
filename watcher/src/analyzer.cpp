@@ -853,6 +853,8 @@ void do_analyze() {
             perror("rename");
             return;
           }
+          fclose(fopen((out_tar_final_filename + std::string(".renew")).c_str(),
+                       "w"));
         }
       } while (!WIFEXITED(wstatus) && !WIFSIGNALED(wstatus));
     } else {
