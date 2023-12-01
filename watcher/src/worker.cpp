@@ -402,13 +402,11 @@ static void collect_msg_queue() {
 }
 
 bool wait_until(time_t timeout) {
-  static const uint32_t futex_word = 1;
-  timespec t;
-  t.tv_sec = timeout;
-  t.tv_nsec = 0;
-  syscall(SYS_futex, &futex_word, FUTEX_WAIT_BITSET | FUTEX_CLOCK_REALTIME,
-          futex_word, &t, 0, FUTEX_BITSET_MATCH_ANY);
-  return futex_word;
+  time_t cur_time = time(NULL);
+  if (timeout > cur_time) {
+    std::this_thread::sleep_for(std::chrono::seconds(timeout - cur_time));
+  }
+  return true;
 }
 
 slurmdb_job_cond_t *setup_job_cond() {
@@ -548,6 +546,7 @@ void watcher() {
     do_analyze();
     printf("Accounting import ended at %ld, would sleep until %ld\n",
       time(NULL), timeout);
+    fflush(stdout);
   } while (!run_once && (wait_until(timeout)));
   slurm_list_destroy(state_list);
   free(condition);

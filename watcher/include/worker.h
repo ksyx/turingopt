@@ -6,6 +6,8 @@
 #include "messaging.h"
 #include "gpu/interface.h"
 
+#include <thread>
+
 // ========================== FOR DEBUG AND TEST ONLY ==========================
 // THIS OPTION BRINGS KNOWN PROBLEM OF POSSIBLY MISSING MATCHING JOBINFO!!!
 // Set this value to be the length of sleep that waits for last-minute messages
