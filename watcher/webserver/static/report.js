@@ -373,11 +373,11 @@ function initialize_revealjs() {
     })
     addEventListener("hashchange", (event) => {
       sec = location.hash.slice(1)
-      hashtarget = $('a[name="' + sec + '"')
+      hashtarget = $('a[name="' + sec + '"]')
       if (hashtarget.length) {
         hashtarget = hashtarget.parent()
         tagName = hashtarget[0]['tagName']
-        if (tagName[0] == 'H') {
+        if (tagName[0] == 'H' || secid[sec] != undefined) {
           from_hashchange = true
           reveal_state = Reveal.getState()
           target_uid = 0
