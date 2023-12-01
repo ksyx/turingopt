@@ -87,47 +87,47 @@ func loadResult(headerText string, bodyText string, id int, name string) error {
 			tag = strings.TrimSuffix(tag, "_problems")
 			exact[tag] = true
 		})
-	footer_parent := doc.Find("a[name=\"footer\"]").Parent()
-	breakpoints := doc.Find("h1, h2, h3, h4, h5, h6").Union(footer_parent)
+	footerParent := doc.Find("a[name=\"footer\"]").Parent()
+	breakpoints := doc.Find("h1, h2, h3, h4, h5, h6").Union(footerParent)
 	cur = doc.Find("body>*").First()
-	greet_html, err := cur.Html()
+	greetHTML, err := cur.Html()
 	if err != nil {
 		return err
 	}
-	cur.SetHtml("<a name=\"greeting\"></a>" + greet_html)
-	secname := "Greeting"
-	machine_name := "greeting"
+	cur.SetHtml("<a name=\"greeting\"></a>" + greetHTML)
+	secName := "Greeting"
+	machineName := "greeting"
 	suffixes := []string{
 		"_metrics",
 		"_problems",
 	}
 	for cur.Length() > 0 {
 		var sel *goquery.Selection
-		htmltail := ""
-		if machine_name == "footer" {
-			secname = "Footer"
-			lastch := doc.Find("body").Children().Last()
-			htmltail, err = goquery.OuterHtml(doc.Find("body").Children().Last())
+		htmlTail := ""
+		if machineName == "footer" {
+			secName = "Footer"
+			lastChild := doc.Find("body").Children().Last()
+			htmlTail, err = goquery.OuterHtml(doc.Find("body").Children().Last())
 			if err != nil {
 				return err
 			}
-			sel = cur.NextUntilSelection(lastch)
+			sel = cur.NextUntilSelection(lastChild)
 		} else {
 			sel = cur.NextUntilSelection(breakpoints)
 		}
-		htmlcur, err := goquery.OuterHtml(cur)
+		htmlCur, err := goquery.OuterHtml(cur)
 		if err != nil {
 			return err
 		}
-		htmlsel, err := goquery.OuterHtml(sel)
+		htmlSel, err := goquery.OuterHtml(sel)
 		if err != nil {
 			return err
 		}
-		html := htmlcur + htmlsel + htmltail
-		_, ok := exact[machine_name]
+		html := htmlCur + htmlSel + htmlTail
+		_, ok := exact[machineName]
 		if !ok {
 			for _, suffix := range suffixes {
-				if strings.HasSuffix(machine_name, suffix) {
+				if strings.HasSuffix(machineName, suffix) {
 					ok = true
 					break
 				}
@@ -141,23 +141,25 @@ func loadResult(headerText string, bodyText string, id int, name string) error {
 				resultSet.Dedup.ContentData[contentid] = html
 				resultSet.Dedup.ContentID[html] = contentid
 			}
-			resultSet.Results[id].CommonContent[machine_name] = contentid
+			resultSet.Results[id].CommonContent[machineName] = contentid
 		} else {
-			if resultSet.Results[id].UserContent[machine_name] == nil {
-				resultSet.Results[id].UserContent[machine_name] =
+			if resultSet.Results[id].UserContent[machineName] == nil {
+				resultSet.Results[id].UserContent[machineName] =
 					make(map[string]string)
 			}
-			resultSet.Results[id].UserContent[machine_name][name] = html
+			resultSet.Results[id].UserContent[machineName][name] = html
 		}
-		resultSet.NameMapping[machine_name] = secname
+		resultSet.NameMapping[machineName] = secName
+		if machineName == "footer" {
+			break
+		}
 		cur = sel.Last().Next()
-		secname = cur.Text()
-		machine_name, ok = cur.Children().First().Attr("name")
+		secName = cur.Text()
+		machineName, ok = cur.Children().First().Attr("name")
 		if !ok {
 			return genMismatchError("get_machine_name")
 		}
 	}
-	seenUser[name] = true
 	return nil
 }
 
@@ -218,7 +220,10 @@ func loadResultTar(tarReader *tar.Reader, id int) error {
 		switch ext {
 		case "header":
 			if name != curName {
-				action(curName)
+				err := action(curName)
+				if err != nil {
+					return err
+				}
 				curName = name
 			}
 			headerText, err = io.ReadAll(tarReader)
@@ -234,7 +239,10 @@ func loadResultTar(tarReader *tar.Reader, id int) error {
 			curName = ""
 		}
 	}
-	action(curName)
+	err = action(curName)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
