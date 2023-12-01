@@ -538,11 +538,17 @@ void do_analyze() {
   step_renew(renew_analyzer_stmt, OP, offset_start, offset_end);
   sqlite3_finalize(renew_analyzer_stmt);
 
-  if (time(NULL) > next_period_update) {
+  bool expired = next_period_update && time(NULL) > next_period_update;
+  bool update_period = !next_period_update || expired;
+
+  if (expired) {
     sqlite3_end_transaction();
-    next_period_update = time(NULL) + ANALYZE_PERIOD_LENGTH;
   } else {
     sqlite3_exec(SQL_CONN_NAME, "ROLLBACK;", NULL, NULL, NULL);
+  }
+
+  if (update_period) {
+    next_period_update = time(NULL) + ANALYZE_PERIOD_LENGTH;
   }
 
   std::string out_tar_final_filename
