@@ -14,6 +14,7 @@ function load_tip() {
     tiphtml += " <abbr title=\"" + tipsource + "\">Source</abbr>"
   }
   document.getElementById("tipoftheday_modal_text").innerHTML = tiphtml
+  $("#tipoftheday_modal").on("hidden.bs.modal", () => { select_teaser() })
 }
 
 function move_tip(delta) {
@@ -30,8 +31,8 @@ function popup_tip_of_the_day() {
   curtip = teaser_tipid[randteaser]
   load_tip()
   $('#tipoftheday_modal').modal('show')
-  setTimeout((e)=>{select_teaser()}, 1000);
 }
+
 teasers = []
 tipsourceid = []
 tiptexts = []
