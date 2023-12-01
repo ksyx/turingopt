@@ -366,10 +366,12 @@ function initialize_revealjs() {
     }
     $("#popup_modal").on("shown.bs.modal", () => {
       if (tagName == 'TH') {
-        $("#popup_modal_message").find('a[name="' + sec + '"')[0].scrollIntoView()
         $("#popup_modal_message").find('table').addClass("table").addClass("border-black")
+        elem = $("#popup_modal_message").find('a[name="' + sec + '"]')
+        elem.closest('th').css("background-color", "var(--bs-info-bg-subtle)")
+        elem[0].scrollIntoView()
       }
-      window.location.hash = "#event"
+      window.location.hash = "#popup"
     })
     addEventListener("hashchange", (event) => {
       sec = location.hash.slice(1)
