@@ -17,6 +17,21 @@
 
   <link rel="stylesheet" crossorigin="anonymous"
     href="https://cdn.jsdelivr.net/npm/@finos/perspective-viewer@2.7.0/dist/css/pro.min.css" />
+  <style type="text/css">
+    @-moz-document url-prefix() {
+      regular-table td, regular-table th {
+        padding: 0;
+      }
+      regular-table th>span {
+        display: inline list-item;
+        list-style-image: url("data:image/svg+xml;<svg version='1.1' id='Layer_1' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' x='0px' y='0px' width='10px' height='10px' viewBox='0 0 10 10' enable-background='new 0 0 10 10' xml:space='preserve'> </svg>");
+      }
+      regular-table td.psp-align-left {
+        position: relative;
+        left: 10px;
+      }
+    }
+  </style>
 </head>
 
 <body>
