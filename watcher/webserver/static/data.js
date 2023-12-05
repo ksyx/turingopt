@@ -19,12 +19,14 @@ function form_table(data, periods) {
   for (let period in raw) {
     var curperiod = raw[period]['data']
     var curperiod_datetime = periods[period]['updated'] * 1000
+    var agg_level_has_problem = [{}, {}]
     for (let user in curperiod) {
       var curuser = curperiod[user]
       var jobstep_name = {}
       curuser['JobInfo'].forEach((info) => {
         jobstep_name[info['Job']] = info['Name']
       });
+      var agg_level = (info) => {return info['Step'] == "null" ? 1 : 0}
       for (let entry in curuser) {
         var curentry = curuser[entry]
         /*
@@ -40,6 +42,7 @@ function form_table(data, periods) {
                 columns[col] = 'integer'
                 problems[col] = 1
                 info[col] = 100
+                agg_level_has_problem[agg_level(info)][col] = true
               } else if (columns[col] != 'float') {
                 if (!Number.isInteger(info[col])
                       || BigInt(String(info[col])) > 2147483647) {
@@ -77,7 +80,9 @@ function form_table(data, periods) {
     result.forEach((info) => {
       for (let col in columns) {
         if (info[col] == undefined) {
-          if (info['Source'] == 'Problems' && problems[col] != undefined) {
+          if (info['Source'] == 'Problems'
+              && problems[col] != undefined
+              && agg_level_has_problem[agg_level(info)][col]) {
             info[col] = 0
           } else {
             info[col] = null
