@@ -26,7 +26,7 @@ function form_table(data, periods) {
       curuser['JobInfo'].forEach((info) => {
         jobstep_name[info['Job']] = info['Name']
       });
-      var agg_level = (info) => {return info['Step'] == "null" ? 1 : 0}
+      var agg_level = (info) => {return String(info['Step']) == "null" ? 1 : 0}
       for (let entry in curuser) {
         var curentry = curuser[entry]
         /*
