@@ -20,6 +20,14 @@ const char *PRE_ANALYZE_SQL = SQLITE_CODEBLOCK(
   "|| (CAST(strftime('%j', " #VAR ", 'unixepoch') AS INTEGER) - 1)" \
   "|| strftime('-%H:%M:%S', " #VAR ", 'unixepoch') "
 
+/*
+Analysis ideas:
+  - Infer how sys time is spent by checking for concurrent memory allocation
+    or deallocation, as well as concurrent disk IO (needs to be process owner)
+  - Memory reallocation rate -- How much memory is freed and subsequently reallocated
+    (could maintain own memory pool to hold these chunks and accelearate allocation / free)
+*/
+
 const char *ANALYZE_CREATE_BASE_TABLES[] = {
   /*[0]*/SQLITE_CODEBLOCK(
   CREATE TABLE inmem.measurements AS
