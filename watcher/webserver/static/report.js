@@ -477,7 +477,6 @@ function initialize_revealjs() {
             reveal_state = Reveal.getState()
             reveal_state.indexv = i
             Reveal.setState(reveal_state)
-            from_hashchange = true
             return
           }
         } else {
