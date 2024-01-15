@@ -283,7 +283,6 @@ function initialize_revealjs() {
   jq_td_mouseleave_handler = (event) => {jq_td_handler(event, jq_td_mouseleave)}
 
   function updateSelectValue(select, val, performaction) {
-    console.log('select', val)
     select.selectpicker('val', String(val));
     if (performaction) {
       select[0].onchange()
@@ -469,7 +468,7 @@ function initialize_revealjs() {
           && (indexv_diff == -1 || indexv_diff == 1)) {
         i = event.indexv
         while (i >= 0 && i < userlist.length && missingcontent[event.indexh][i]) {
-          console.log(missingcontent[event.indexh][i], i, indexv_diff)
+          // console.log(missingcontent[event.indexh][i], i, indexv_diff)
           i += indexv_diff
         }
         if (i >= 0 && i < userlist.length) {
@@ -505,7 +504,6 @@ function initialize_revealjs() {
     }
     jq = $(event.currentSlide)
     jq_td = jq.find("td, th")
-    console.log(customcontrol_jq.css("display"))
     tbl_jq = jq.find("table")
     if (is_zoomin) {
       zoomtable_button()

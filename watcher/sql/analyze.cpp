@@ -489,7 +489,7 @@ const char *ANALYZE_DUMP_DATA_TO_JSON_SQL = SQLITE_CODEBLOCK(
 #define _SUMMARIZE_GPU_PROBLEM_SQL SQLITE_CODEBLOCK(                           \
   iif(zero_util_cnt == measurement_cnt, 'completely_no_util',                  \
     rtrim(                                                                     \
-      iif(longest_continuous_zero_util >= measurement_cnt * 0.25,                 \
+      iif(longest_continuous_zero_util >= measurement_cnt * 0.25,              \
           'try_split | ', '')                                                  \
       ||                                                                       \
       iif(low_util_cnt + zero_util_cnt >= 0.9 * measurement_cnt,               \
