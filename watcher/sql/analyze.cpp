@@ -40,9 +40,9 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND measurements.jobid == jobinfo.jobid
     WINDOW win AS (PARTITION BY measurements.jobid, measurements.stepid);
   ), /*[1]*/SQLITE_CODEBLOCK(
-    CREATE TABLE inmem.recombined_jobinfo AS
-    SELECT
-      jobid, stepid,
+
+    CREATE TABLE inmem.recombined_jobinfo AS SELECT * FROM (
+      SELECT jobid, stepid,
       first_value(mem) OVER win AS mem_limit,
       first_value(user) OVER win AS user,
       first_value(name) OVER win || '/' || iif(name IS NULL, 'null', name)
@@ -58,6 +58,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     FROM jobinfo
     WHERE user IS NULL OR user IS :user
     WINDOW win AS (PARTITION BY jobid ORDER BY stepid NULLS FIRST)
+    ) WHERE user IS :user
   ), /*[2]*/SQLITE_CODEBLOCK(
 
   CREATE TABLE inmem.timeseries AS
