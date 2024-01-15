@@ -66,9 +66,17 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         SELECT recordid, sum(flag) OVER win AS measurement_batch
         FROM (
           SELECT
-            recordid, (lag(watcherid) OVER win IS NOT watcherid) AS flag
+            recordid, (
+              lag(watcherid) OVER win IS NOT watcherid
+            ) AS flag, (
+              max(latest_recordid) OVER win2 > :offset_start
+              AND max(latest_recordid) OVER win2 <= :offset_end
+            ) AS kept
           FROM inmem.measurements
-          WINDOW win AS (ORDER BY recordid))
+               JOIN inmem.recombined_jobinfo USING (jobid, stepid)
+          WINDOW win AS (ORDER BY recordid),
+                 win2 AS (PARTITION BY name, submit_line)
+        ) WHERE kept
         WINDOW win AS (ORDER BY recordid
           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
       )
@@ -77,6 +85,8 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     )
     SELECT
       *,
+      latest_recordid > :offset_start AND latest_recordid <= :offset_end
+        AS is_new_in_period,
       user_sec * 1e6 + user_usec
         - lag(user_sec * 1e6 + user_usec, 1, user_sec * 1e6 + user_usec)
       OVER win AS delta_user_time,
@@ -118,7 +128,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     WITH systime_ratio_base AS MATERIALIZED (
     WITH systime_ratio_base AS MATERIALIZED (
     WITH systime_ratio_base AS MATERIALIZED (
-      SELECT jobid, stepid, latest_recordid,
+      SELECT jobid, stepid, is_new_in_period,
              measurement_batch, name, submit_line, 
              delta_sys_time / delta_user_time AS sys_ratio
       FROM inmem.timeseries
@@ -157,7 +167,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     WITH gpu_measurements_flagged AS MATERIALIZED (
       SELECT
         gpu_measurements.jobid, gpu_measurements.stepid, batch,
-        latest_recordid, age, gpuid, power_usage, temperature, sm_clock, util,
+        is_new_in_period, age, gpuid, power_usage, temperature, sm_clock, util,
         age IS NOT 0 AND age > lag(age) OVER win IS 1 AS discard,
         util == 0 AS zero_flags
       FROM gpu_measurements, inmem.timeseries
@@ -192,7 +202,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
       FROM gpu_measurements_flagged
       WINDOW win AS (PARTITION BY jobid, stepid, gpuid ORDER BY batch)
     )
-    SELECT ts.watcherid, ts.jobid, ts.stepid, ts.latest_recordid, ts.nnodes,
+    SELECT ts.watcherid, ts.jobid, ts.stepid, ts.is_new_in_period, ts.nnodes,
            ts.measurement_batch, name, submit_line,
            batch AS gpu_measurement_batch, gpuid,
            power_usage, temperature, sm_clock, util, zero_segment_length
@@ -202,7 +212,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           AND gpu_measurements_flagged.jobid == ts.jobid
           AND gpu_measurements_flagged.stepid == ts.stepid
     ) SELECT gpu_usage_base.jobid, gpu_usage_base.stepid,
-       latest_recordid, name, target_node, gpuid AS gpuid_raw,
+       is_new_in_period, name, target_node, gpuid AS gpuid_raw,
        iif(nnodes > 1, target_node || '/', '') || gpuid AS gpuid,
        submit_line, count(util) AS measurement_cnt,
        avg(util) AS avg_util, sum(zero_segment_length) AS zero_util_cnt,
@@ -224,8 +234,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
         FROM gpu_measurements GROUP BY batch, gpuid
         UNION SELECT NULL, 0)
   WHERE batch IS gpu_measurement_batch AND watcher.id == watcherid
-        AND ts.latest_recordid > :offset_start
-        AND ts.latest_recordid <= :offset_end
+        AND ts.is_new_in_period
   WINDOW win AS
           (PARTITION BY ts.jobid, ts.stepid, target_node, ngpu_in_use),
         win_super AS
@@ -248,8 +257,7 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           FROM inmem.timeseries
         )
   WHERE watcher.id == watcherid AND the_recordid == recordid
-        AND ts.latest_recordid > :offset_start
-        AND ts.latest_recordid <= :offset_end
+        AND ts.is_new_in_period
   WINDOW win AS
           (PARTITION BY ts.jobid, ts.stepid, target_node, the_ncpu_in_use),
         win_super AS
@@ -417,8 +425,7 @@ const char *ANALYZE_DUMP_DATA_TO_JSON_SQL = SQLITE_CODEBLOCK(
     )) AS jobinfo_data
     FROM (SELECT * FROM inmem.timeseries
             GROUP BY jobid, stepid
-            HAVING latest_recordid > :offset_start
-                   AND latest_recordid <= :offset_end
+            HAVING is_new_in_period
           ) AS ts
           LEFT JOIN jobinfo
             ON (jobinfo.jobid == ts.jobid AND jobinfo.stepid IS NULL)
@@ -434,8 +441,7 @@ const char *ANALYZE_DUMP_DATA_TO_JSON_SQL = SQLITE_CODEBLOCK(
         JOIN (
           SELECT jobid, stepid FROM inmem.timeseries
           GROUP BY jobid, stepid
-          HAVING latest_recordid > :offset_start
-                 AND latest_recordid <= :offset_end
+          HAVING is_new_in_period
         ) USING (jobid, stepid)
   ) AS application_usage_data, (
     SELECT json_group_array(json(data)) AS problems_data FROM (
@@ -466,19 +472,18 @@ const char *ANALYZE_DUMP_DATA_TO_JSON_SQL = SQLITE_CODEBLOCK(
       'AvgGPUClockMHz', avg_clock, 'AvgGPUPowerUsageWatt', avg_power_usage,
       'AvgGPUTempC', avg_temperature
     )) AS gpu_usage_data FROM inmem.gpu_usage_base
-    WHERE latest_recordid > :offset_start AND latest_recordid <= :offset_end
+    WHERE is_new_in_period
   ) AS gpu_usage_data, (
     SELECT json_group_array(json_object(
       'Job', jobid, 'Step', stepid, 'TotSysTimeRatioSamples', tot_in_batch,
       '10%~33%', sys_ratio_1_10, '33%~66%', sys_ratio_1_3,
       '66%~100%', sys_ratio_2_3, '>100%', sys_ratio_gt_1
     )) AS sys_time_ratio_data FROM inmem.sys_ratio
-    WHERE latest_recordid > :offset_start AND latest_recordid <= :offset_end
+    WHERE is_new_in_period
   ) AS sys_time_ratio_data);
 );
 
-#define _FILTER_LATEST_RECORD_SQL \
-  "latest_recordid > :offset_start AND latest_recordid <= :offset_end"
+#define _FILTER_LATEST_RECORD_SQL "is_new_in_period"
 
 #define _SUMMARIZE_GPU_PROBLEM_SQL SQLITE_CODEBLOCK(                           \
   iif(zero_util_cnt == measurement_cnt, 'completely_no_util',                  \
@@ -501,7 +506,7 @@ const char *ANALYZE_GPU_USAGE_HISTORY_SQL
   = SQLITE_CODEBLOCK(
     WITH grouped_gpu_usage AS (
     SELECT
-      jobid, stepid, name,
+      max(jobid) AS jobid, stepid, name,
       sum(measurement_cnt) AS measurement_cnt,
       sum(avg_util * measurement_cnt) / sum(measurement_cnt) AS avg_util,
       sum(zero_util_cnt) AS zero_util_cnt,
@@ -513,8 +518,6 @@ const char *ANALYZE_GPU_USAGE_HISTORY_SQL
         AS avg_power_usage
     FROM inmem.gpu_usage_base
     GROUP BY name, submit_line
-    HAVING max(latest_recordid) > :offset_start
-           AND max(latest_recordid) <= :offset_end
     ) SELECT *,
   )
   _SUMMARIZE_GPU_PROBLEM_SQL
@@ -545,7 +548,8 @@ const char *ANALYSIS_LIST_LATEST_SYS_RATIO_SQL
 const char *ANALYZE_SYS_RATIO_HISTORY_SQL
   = SQLITE_CODEBLOCK(
     WITH grouped_sys_ratio AS (
-    SELECT jobid, stepid, name,
+    SELECT
+      max(jobid) AS jobid, stepid, name,
       sum(tot_in_batch) AS tot_in_batch,
       sum(sys_ratio_1_10) AS sys_ratio_1_10,
       sum(sys_ratio_1_3) AS sys_ratio_1_3,
@@ -554,8 +558,6 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
       sum(major_ratio_unified_tot) AS major_ratio_unified_tot
       FROM inmem.sys_ratio
       GROUP BY name, submit_line
-      HAVING max(latest_recordid) > :offset_start
-            AND max(latest_recordid) <= :offset_end
       ORDER BY name, submit_line, measurement_batch
     ) SELECT *,
   ) "iif(" _PROBLEMATIC_SYS_RATIO_CONDITION ", 'sys_ratio', '') AS problem_tag"
@@ -572,7 +574,6 @@ const char *ANALYZE_RESOURCE_USAGE_SQL = SQLITE_CODEBLOCK(
          || iif(nnode IS NULL, '',
                 '(' || nnode || ' node' || iif(nnode > 1, 's', '') || ')')
            AS name,
-         :offset_end - :offset_start AS unused,
          format('%.2lf%% (%d / %d MB)',
                 1.0 * agg_peak_res_size / agg_mem_limit /
                   iif(peak_res_size IS peak_res_size_slurm

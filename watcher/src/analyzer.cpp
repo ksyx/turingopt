@@ -621,11 +621,11 @@ void do_analyze() {
       }
       auto &stmt = create_base_table_stmt[i];
       setup_stmt(stmt, *cur_stmt, OP);
-      if (i <= 1 || i == 6) {
+      if (i <= 2) {
         SQLITE3_BIND_START
         if (i <= 1) {
           NAMED_BIND_TEXT(stmt, ":user", user);
-        } else if (i == 6) {
+        } else if (i == 2) {
           BIND_OFFSET(stmt);
         }
         if (BIND_FAILED) {
@@ -652,7 +652,7 @@ void do_analyze() {
             info++;
           }
         };
-      #define SETUP(NAME, BIND) \
+      #define SETUP(NAME) \
         if (info->NAME##_sql) { \
           if (first) { \
             set_problem_info(info->problems); \
@@ -660,19 +660,10 @@ void do_analyze() {
           if (!setup_stmt(info->NAME##_stmt, info->NAME##_sql, #NAME)) { \
             exit(1); \
           } \
-          if (BIND) { \
-          SQLITE3_BIND_START \
-            BIND_OFFSET(info->NAME##_stmt); \
-            if (BIND_FAILED) { \
-              SQLITE3_PERROR("bind("#NAME")"); \
-              exit(1); \
-            } \
-            SQLITE3_BIND_END \
-          } \
         }
-      SETUP(latest_analysis, 1);
-      SETUP(latest_problem, 1);
-      SETUP(history_analysis, 0);
+      SETUP(latest_analysis);
+      SETUP(latest_problem);
+      SETUP(history_analysis);
       #undef SETUP
       cur++;
     }
@@ -800,7 +791,6 @@ void do_analyze() {
       if (setup_stmt(
         dump_json_stmt, ANALYZE_DUMP_DATA_TO_JSON_SQL, "(dump_json)")) {
         SQLITE3_BIND_START
-          BIND_OFFSET(dump_json_stmt);
           NAMED_BIND_TEXT(dump_json_stmt, ":user", user);
           if (BIND_FAILED) {
             post_analyze();
