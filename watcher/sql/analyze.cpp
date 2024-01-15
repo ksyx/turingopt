@@ -30,17 +30,14 @@ Analysis ideas:
 
 const char *ANALYZE_CREATE_BASE_TABLES[] = {
   /*[0]*/SQLITE_CODEBLOCK(
-
   CREATE TABLE inmem.measurements AS
-    SELECT measurements.*, scrape_interval,
+    SELECT measurements.*,
            max(recordid) OVER win AS latest_recordid
-    FROM measurements
-         JOIN watcher ON (measurements.watcherid == watcher.id)
-         JOIN jobinfo USING (jobid)
-         JOIN (SELECT *, lead(start, 1, 2e9) OVER win AS endval
-                 FROM scrape_freq_log_internal WINDOW win AS (ORDER BY start))
-                   ON (recordid >= start AND recordid < endval)
-    WHERE jobinfo.user IS :user AND watcher.target_node IS NOT NULL
+    FROM measurements, watcher, jobinfo
+    WHERE jobinfo.user IS :user
+          AND watcher.target_node IS NOT NULL
+          AND measurements.watcherid == watcher.id
+          AND measurements.jobid == jobinfo.jobid
     WINDOW win AS (PARTITION BY measurements.jobid, measurements.stepid);
   ), /*[1]*/SQLITE_CODEBLOCK(
     CREATE TABLE inmem.recombined_jobinfo AS
@@ -71,18 +68,14 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
           SELECT
             recordid, (
               lag(watcherid) OVER win IS NOT watcherid
-              OR ifnull(tot_time - lag(tot_time) OVER win2
-                        > 1e6 * lag(scrape_interval) OVER win2, 0)
             ) AS flag, (
-              max(latest_recordid) OVER win3 > :offset_start
-              AND max(latest_recordid) OVER win3 <= :offset_end
+              max(latest_recordid) OVER win2 > :offset_start
+              AND max(latest_recordid) OVER win2 <= :offset_end
             ) AS kept
           FROM inmem.measurements
                JOIN inmem.recombined_jobinfo USING (jobid, stepid)
           WINDOW win AS (ORDER BY recordid),
-                 win2 AS (PARTITION BY jobid, stepid, watcherid
-                          ORDER BY recordid),
-                 win3 AS (PARTITION BY name, submit_line)
+                 win2 AS (PARTITION BY name, submit_line)
         ) WHERE kept
         WINDOW win AS (ORDER BY recordid
           ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
@@ -114,6 +107,9 @@ const char *ANALYZE_CREATE_BASE_TABLES[] = {
     FROM grouped_measurements
            JOIN inmem.recombined_jobinfo USING (jobid, stepid)
            /*LEFT*/ JOIN job_step_cpu_available USING (jobid, stepid, watcherid)
+           JOIN (SELECT *, lead(start, 1, 2e9) OVER win AS endval
+                   FROM scrape_freq_log_internal WINDOW win AS (ORDER BY start))
+                      ON (recordid >= start AND recordid < endval)
     WHERE
       inmem.recombined_jobinfo.jobid == grouped_measurements.jobid
       AND inmem.recombined_jobinfo.stepid == grouped_measurements.stepid
