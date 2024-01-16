@@ -1,0 +1,15 @@
+[Unit]
+Description=server daemon of turingwatch HPC watcher
+Documentation=https://github.com/ksyx/turingopt
+[Service]
+Type=exec
+# CONFIGURE STARTS
+User=CHANGETHIS
+WorkingDirectory=/opt/turingwatch
+# Relative to working directory above
+EnvironmentFile=/opt/turingwatch/env/server.env
+# Make sure the binary is the same one as the distributor
+ExecStart=/bin/bash -c 'source /etc/profile && module load slurm && /home/SOMEUSER/SOMEPATH/turingwatch'
+# CONFIGURE ENDS
+[Install]
+WantedBy=multi-user.target

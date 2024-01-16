@@ -1,0 +1,18 @@
+[Unit]
+Description=watcher distributor daemon of turingwatch HPC watcher
+Documentation=https://github.com/ksyx/turingopt
+BindsTo=turingwatch.server.service
+After=turingwatch.server.service
+[Service]
+Type=exec
+# CONFIGURE STARTS
+User=CHANGETHIS
+# Make sure this path can be accessed by other nodes
+WorkingDirectory=/home/SOMEUSER/SOMEPATH
+EnvironmentFile=/opt/turingwatch/env/distributor.env
+# CONFIGURE ENDS
+ExecStart=/bin/bash -c 'source /etc/profile && module load slurm && ./turingwatch'
+# COMMENT this out if cancelling scraping jobs is not desired
+ExecStop=/bin/bash -c 'source /etc/profile && module load slurm && scancel -n turingwatch'
+[Install]
+WantedBy=multi-user.target

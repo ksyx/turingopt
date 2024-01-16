@@ -1,0 +1,12 @@
+[Unit]
+Description=server daemon of turingwatch reporting website
+Documentation=https://github.com/ksyx/turingopt
+[Service]
+Type=exec
+# CONFIGURE STARTS
+User=CHANGETHIS
+WorkingDirectory=/opt/turingwatch
+# CONFIGURE ENDS
+ExecStart=./turingreport
+[Install]
+WantedBy=multi-user.target
