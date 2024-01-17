@@ -559,6 +559,7 @@ const char *ANALYZE_SYS_RATIO_HISTORY_SQL
       sum(major_ratio_unified_tot) AS major_ratio_unified_tot
       FROM inmem.sys_ratio
       GROUP BY name, submit_line
+      HAVING max(is_new_in_period)
       ORDER BY name, submit_line, measurement_batch
     ) SELECT *,
   ) "iif(" _PROBLEMATIC_SYS_RATIO_CONDITION ", 'sys_ratio', '') AS problem_tag"
