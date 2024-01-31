@@ -325,14 +325,14 @@ ANALYSIS(sys_ratio_analysis) = {
   .analysis_description
     = "This analysis identifies job submissions that are likely to be <b>less"
       " computationally effective</b> but may not have been captured by other"
-      " analysis, possibly due to problems that are not previously identified"
+      " analyses, possibly due to problems that are not previously identified"
       " and therefore have no specific rules set up, or those that could not be"
       " determined with available metrics.",
   .headers_description
     = "The columns are the number of sampled time slice having ratios in the"
       " shown range when the time spent on system requests (system time) is"
       " divided by the time spent on user computations (user time). These"
-      " ratios shows how significant the system time is when compared to user"
+      " ratios shows how significant the system time is in comparison to user"
       " time."
 };
 
