@@ -12,5 +12,5 @@ TURING_WATCH_NO_CHECK_SSL_CERT=1
 TURING_WATCH_DB_HOST='$(hostname)'
 TURING_WATCH_PORT=3755
 TURING_WATCH_BRIGHT_URL_BASE='https://set_this_or_remove:port'
-SLURM_CGROUP_MOUNTPOINT='$(scontrol show config | grep CgroupMountpoint | cut -d= -f2 | tr -d ' ')'
+SLURM_CGROUP_MOUNT_POINT='$(scontrol show config | grep CgroupMountpoint | cut -d= -f2 | tr -d ' ')'
 EOF
