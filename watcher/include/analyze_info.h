@@ -27,6 +27,18 @@ enum analyze_problem_solution_t {
   ANALYZE_SOLUTION_TYPE_OTHER,
 };
 
+#define ANLAYZE_COMPOSITE_COLOR(FOREGROUND, BACKGROUND) (FOREGROUND##UL << 32) | BACKGROUND##UL
+#define ANLAYZE_COMPOSITE_COLOR_FOREGROUND(COLOR) (COLOR >> 32)
+#define ANLAYZE_COMPOSITE_COLOR_BACKGROUND(COLOR) (COLOR & ((1 << 32) - 1))
+
+enum analyze_problem_severity_t {
+  ANALYZE_SEVERITY_SERIOUS = ANLAYZE_COMPOSITE_COLOR(0xff0000ff, 0xff00002b),
+  ANALYZE_SEVERITY_MEDIUM = ANLAYZE_COMPOSITE_COLOR(0xe47200ff, 0xffff002b),
+  ANALYZE_SEVERITY_INFO = ANLAYZE_COMPOSITE_COLOR(0x0000ffff, 0xc3f0ffff),
+};
+
+#undef ANALYZE_COMPOSITE_COLOR
+
 typedef struct analyze_problem_t {
   const char *sql_name;
   const char *printed_name;
@@ -35,6 +47,7 @@ typedef struct analyze_problem_t {
   const char *solution;
   const char *oneliner;
   enum analyze_problem_solution_t solution_type;
+  enum analyze_problem_severity_t severity;
 };
 
 typedef struct analyze_result_field_t {

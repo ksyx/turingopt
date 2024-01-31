@@ -9,6 +9,7 @@ static int offset_start, offset_end;
   "<" #TAG ">" "<a name=\"" ANCHOR "\"></a>" TEXT "</" #TAG ">"
 #define ANCHOR_LINK(TARGET, TEXT, ...) \
   "<a href=\"#" TARGET "\"" __VA_ARGS__ ">" TEXT "</a>"
+#define CSS(TEXT) "style=\"" TEXT "\""
 #define TOC_LINK(TEXT) ANCHOR_LINK("toc", TEXT)
 #define HEADER_TEXT(ANCHOR, TEXT) ANCHORED_TAG(h3, ANCHOR, TOC_LINK(TEXT))
 #define SUBHEADER_TEXT(ANCHOR, TEXT) ANCHORED_TAG(h4, ANCHOR, TOC_LINK(TEXT))
@@ -180,7 +181,7 @@ void run_analysis_stmt(
       fprintf(header_fp,
               LISTITEM(ANCHOR_LINK("%s_%s", "%s", "%s")),
               info_machine_name_str, title_machine_name_str,
-              highlight ? "style=\"color: revert; font-weight: bold\"" : "",
+              highlight ? CSS("color: revert; font-weight: bold") : "",
               title);
       fprintf(fp, SUBHEADER_TEXT("%s_%s", "%s"),
                   info_machine_name_str, title_machine_name_str, title);
@@ -221,6 +222,7 @@ void run_analysis_stmt(
     const double not_an_number = std::nan("0");
     int cnt_percentage = 0;
     bool met_stepid = 0;
+    analyze_problem_severity_t last_problem_severity;
     SQLITE3_FETCH_COLUMNS_START(NULL)
     SQLITE3_FETCH_COLUMNS_LOOP_HEADER(i, stmt)
       if (!cur->sql_column_name) {
@@ -234,6 +236,7 @@ void run_analysis_stmt(
       }
       bool is_percentage = cur->flags & ANALYZE_FIELD_SHOW_PERCENTAGE;
       bool is_null_data = SQLITE3_IS_NULL();
+      std::string td_styling = "";
       if (!cur->printed_name) {
         goto finalize_table_row_loop;
       }
@@ -243,8 +246,14 @@ void run_analysis_stmt(
         colspans.push(cnt_percentage);
         cnt_percentage = 0;
       }
-      fprintf(fp, "<td%s>",
-                  has_total && !is_percentage ? " rowspan=\"3\"" : "");
+      if (has_total && !is_percentage) {
+        td_styling += std::string(" rowspan=\"3\"");
+      }
+      if (cur->flags & ANALYZE_FIELD_PROBLEMS) {
+        td_styling += std::string(" " CSS("padding: 0; height: 0;"
+                                          "vertical-align: top;"));
+      }
+      fprintf(fp, "<td%s>", td_styling.c_str());
       if (cur->flags & ANALYZE_FIELD_STEP_ID) {
         met_stepid = 1;
         stepid = -1;
@@ -312,15 +321,32 @@ void run_analysis_stmt(
             } else if (c == '|' || c == '\0') {
               if (cur_problem.length()) {
                 if (problem_info.count(cur_problem)) {
+                  auto &info = problem_info[cur_problem];
                   if (first) {
-                    fputs("<ul style=\"padding-left: 0.5rem\">", fp);
+                    fprintf(fp, "<div " CSS("height: 100%; display: flex;"
+                                " flex-direction: column;") ">"
+                                WRAPTAG(div, "",
+                                        CSS("width: 100%; flex-grow: 1;"
+                                        " background: #%08x")) "\n",
+                            ANLAYZE_COMPOSITE_COLOR_BACKGROUND(info->severity));
                     first = 0;
                   }
-                  auto &info = problem_info[cur_problem];
                   problem_cnt[info]++;
-                  fprintf(fp, LISTITEM(ANCHOR_LINK("%s_%s", "%s")),
+                  fprintf(fp,
+                          WRAPTAG(div,
+                                  ANCHOR_LINK("%s_%s", "%s",
+                                              CSS("color: #%08x;"
+                                                  " text-decoration: none;"
+                                                  " white-space: nowrap;"
+                                                  " font-weight: bold;")),
+                                  CSS("background: #%08x; text-align: center;"
+                                      " padding: 0.5rem 0.5rem 0.5rem 0.5rem;"))
+                          "\n",
+                          ANLAYZE_COMPOSITE_COLOR_BACKGROUND(info->severity),
                           info_machine_name_str, info->sql_name,
+                          ANLAYZE_COMPOSITE_COLOR_FOREGROUND(info->severity),
                           info->printed_name);
+                  last_problem_severity = info->severity;
                   if (!bind_failed) {
                     sqlite3_reset(insert_problem_listing_stmt);
                     int ret;
@@ -349,7 +375,11 @@ void run_analysis_stmt(
         }
         sqlite3_finalize(insert_problem_listing_stmt);
         if (!first) {
-          fputs("</ul>", fp);
+          fprintf(fp, WRAPTAG(div, "",
+                              CSS("width: 100%; flex-grow: 1;"
+                                  " background: #%08x")
+                      ) "</div>\n",
+                  ANLAYZE_COMPOSITE_COLOR_BACKGROUND(last_problem_severity));
         }
       } else if (!is_null_data) {
         switch (cur->type) {
@@ -434,7 +464,7 @@ void run_analysis_stmt(
         << (has_named_problem && tot > 1 ? "s" : "")
         << (has_named_problem ? " in " : "")
         << "<a href=\"#" << info_machine_name_str << "_" << title_machine_name
-        << "\" " << (highlight ? "style=\"color: revert\"" : "") << ">"
+        << "\" " << (highlight ? CSS("color: revert") : "") << ">"
         << "<b>" << title_str << "</b></a>"
         << (has_named_problem ? "<ul>" : "</li>\n");
     for (const auto &[problem, cnt] : problem_cnt) {
@@ -460,7 +490,11 @@ void run_analysis_stmt(
       out << "<li>" << cnt << " entr" << (cnt == 1 ? "y has" : "ies have")
           << " problem <a href=\"#"
           << info_machine_name_str << "_" << problem->sql_name << "\">"
-          << "<b>" << problem->printed_name << "</b></a>\n";
+          << "<b " << "style=\"color: #"
+          << std::hex << std::setw(8) << std::setfill('0')
+          << ANLAYZE_COMPOSITE_COLOR_FOREGROUND(problem->severity)
+          << std::dec << std::setw(0) << std::setfill(' ')
+          << "\">" << problem->printed_name << "</b></a>\n";
       if (solution_str) {
         out << " and could be solved by " << solution_str;
       } else if (problem->solution_type != ANALYZE_SOLUTION_TYPE_OTHER) {
@@ -864,5 +898,6 @@ void do_analyze() {
 #undef BIND_OFFSET
 #undef HEADER_TEXT
 #undef BOLD
+#undef STYLE
 #undef SUBHEADER_TEXT
 #undef COLSPAN

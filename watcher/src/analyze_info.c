@@ -162,7 +162,8 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
                 " instance that has more fancy features than Jupyter Notebook,"
                 " separates web server from compute jobs, and creates job on "
                 " demand to ensure higher resource utilization.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_OTHER
+    .solution_type = ANALYZE_SOLUTION_TYPE_OTHER,
+    .severity = ANALYZE_SEVERITY_MEDIUM,
   }, {
     .sql_name = "low_compute_power",
     .printed_name = "Low Compute Power",
@@ -176,7 +177,8 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
                 " library documentations to see if there is improvement. Ignore"
                 " this message if the computation is memory-bounded and large"
                 " amount of available memory is the only resource in need.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_SERIOUS,
   }, {
     .sql_name = "low_concurrency",
     .printed_name = "Low Concurrency",
@@ -186,7 +188,8 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
     .solution = "Set higher concurrency parameter or connect to GPU in your"
                 " code with consulting library documentations to check for"
                 " improvement.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_SERIOUS,
   }, {
     .sql_name = "oversubscribe",
     .printed_name = "Memory Oversubscribe",
@@ -195,7 +198,8 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
               " lose results that are not saved to disk, through which wasted"
               " wasted computations are also created.",
     .solution = "Specify larger amount of memory in allocation request.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_MEDIUM,
   }, {
     .sql_name = "gpu_underusage",
     .printed_name = "GPU Underusage",
@@ -207,24 +211,28 @@ const struct analyze_problem_t analyze_resource_usage_problems[] = {
               " queue waiting for resources! <b>The combined result of zero GPU"
               " utilization and low amount of average CPU cores would bring the"
               " submission to be running at extremely poor performance.</b>",
-    .solution = "Adjust allocation request with refering to the usage info"
+    .solution = "Adjust allocation request with referring to the usage info"
                 " provided.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_SERIOUS,
   }, {
     .sql_name = "cpu_underusage",
     .printed_name = "CPU Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_SERIOUS,
   }, {
     .sql_name = "mem_underusage",
     .printed_name = "Memory Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_MEDIUM,
   }, {
     .sql_name = "timelimit_underusage",
     .printed_name = "Time Limit Underusage",
     .oneliner = "Refer to GPU Underusage section above.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_INFO,
   },
   tail_problem
 };
@@ -305,7 +313,8 @@ const struct analyze_problem_t analyze_sys_ratio_problems[] = {
                 " behind, it is suggested to <b>submit your job for profiling"
                 "</b>. This should be <b>low effort</b> and would be beneficial"
                 " to both you and other cluster users.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_NEED_PROFILING
+    .solution_type = ANALYZE_SOLUTION_TYPE_NEED_PROFILING,
+    .severity = ANALYZE_SEVERITY_INFO,
   }, tail_problem
 };
 
@@ -401,7 +410,8 @@ const struct analyze_problem_t analyze_gpu_problems[] = {
               " using the device for equally long time and stress the queue.",
     .solution = "Check for code and documentation to ensure the computation is"
                 " using GPU.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM
+    .solution_type = ANALYZE_SOLUTION_TYPE_CODE_CHANGE_OR_ALLOCATION_PARAM,
+    .severity = ANALYZE_SEVERITY_SERIOUS,
   }, {
     .sql_name = "try_split",
     .printed_name = "Try Splitting",
@@ -423,7 +433,8 @@ const struct analyze_problem_t analyze_gpu_problems[] = {
                 " argument <code>--dependency=afterok:(jobid)</code>. Use"
                 " accurate time limit for smooth transition from one job to"
                 " another.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION
+    .solution_type = ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION,
+    .severity = ANALYZE_SEVERITY_INFO,
   }, {
     .sql_name = "investigate_usage",
     .printed_name = "Investigate GPU Usage",
@@ -444,7 +455,8 @@ const struct analyze_problem_t analyze_gpu_problems[] = {
                 " to GPU memory, and computing with GPU. Check for bottlenecks"
                 " in the pipeline. Try GPU of lower specifiction if GPU type is"
                 " specified in the allocation request.",
-    .solution_type = ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION
+    .solution_type = ANALYZE_SOLUTION_TYPE_SUGGEST_CONSULTATION,
+    .severity = ANALYZE_SEVERITY_MEDIUM,
   }, tail_problem
 };
 

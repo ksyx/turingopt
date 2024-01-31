@@ -8,6 +8,7 @@
 
 #include <cmath>
 #include <sstream>
+#include <iomanip>
 
 void analyzer_finalize();
 void do_analyze();
