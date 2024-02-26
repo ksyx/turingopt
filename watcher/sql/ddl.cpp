@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS measurements(
   dev_in INTEGER, dev_out INTEGER,
   user_sec INTEGER NOT NULL, user_usec INTEGER NOT NULL,
   sys_sec INTEGER NOT NULL, sys_usec INTEGER NOT NULL,
-  tot_time INTEGER,
+  tot_time INTEGER
     GENERATED ALWAYS
     AS (user_sec * 1e6 + user_usec + sys_sec * 1e6 + sys_usec) STORED
     CHECK (tot_time > 0),
