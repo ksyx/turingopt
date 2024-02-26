@@ -637,7 +637,7 @@ void do_analyze() {
     #if ENABLE_DEBUGOUT
     {
     const char *col = sqlite3_column_name(list_active_user_stmt, 0);
-    if (!strcmp(col, "user")) {
+    if (strcmp(col, "user")) {
       fprintf(stderr, OPACTIVEUSER ": expecting column 'user', got '%s'", col);
     }
     }
