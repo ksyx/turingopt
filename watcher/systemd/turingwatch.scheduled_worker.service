@@ -1,0 +1,11 @@
+[Unit]
+Description=scheduled worker of turingwatch HPC watcher
+Documentation=https://github.com/ksyx/turingopt
+[Service]
+Type=oneshot
+# CONFIGURE STARTS
+User=CHANGETHIS
+ExecStart=/bin/bash -c 'source /etc/profile && module load slurm && /path/to/watcher/scripts/turingwatch_sched_worker.sh'
+# CONFIGURE ENDS
+[Install]
+WantedBy=multi-user.target

@@ -73,9 +73,10 @@ provided in various directories in `watcher/`:
   directory. Within the directory, run `systemd/gen_env.sh`,
   modify **copies of systemd service file templates** in `systemd/`
   following instructions in the file and copy them into
-  `/etc/systemd/system`. Reload service files and use
-  `systemctl start turingwatch.{server,distributor}` to start
-  watcher server or distributor daemons, respectively.
+  `/etc/systemd/system`. Reload service files with running
+  `systemctl daemon-reload` and use
+  `systemctl start turingwatch.{server,distributor}.service`
+  to start watcher server or distributor daemons, respectively.
 
 After the daemon has been running for a period of time, usually 2 or
 3 times of `ACCOUNTING_RPC_INTERVAL`, result tars will appear in
@@ -85,7 +86,12 @@ After the daemon has been running for a period of time, usually 2 or
 - Run the result postprocessing pipeline script with templates in
   `scripts/scheduled_worker` **in the directory containing
   `analysis_results/`**, or schedule the execution of these scripts
-  with `sbatch -b` or systemd timer file.
+  with SLURM by using `sbatch -b` or with systemd by enabling the
+  timer service using
+  `systemctl enable --now turingwatch.scheduled_worker.timer`,
+  after modifying
+  `systemd/turingwatch.scheduled_worker.{timer,service}` and copying
+  to `/etc/systemd/system`.
 - Directly untar the tarball and manually send email using
   `mail -t <<< $(cat username.mail.header username.mail)`
 
