@@ -48,6 +48,10 @@ while [ ! -f "$WAIT_FILENAME" ]; do sleep 1; done
 # --exclusive is specified in srun, but note that its meaning is
 # different from that of sbatch or salloc.
 
+# The option value --gres-flags=allow-task-sharing available in
+# SLURM 23-11-4-1 or later may be helpful in making GPUs visible to
+# watcher easily.
+
 srun --exclusive -N $SLURM_NNODES -n $SLURM_NTASKS -c 1 --mpi=pmi2 APPLICATION
 
 # When background jobs are involved in this section, keep their PIDs
