@@ -16,6 +16,17 @@
 #    - when memory requirement is not specified in all individual 
 #      srun in this script, set mem-per-cpu to avoid any srun from
 #      being blocked
+#    - FOR NVML-based GPU monitoring:
+#      The option value --gres-flags=allow-task-sharing available
+#      in SLURM 23-11-4-1 or later may be helpful in making GPUs
+#      visible to watcher easily. If this option is available, add it
+#      to the srun argument of watcher invoking line below that
+#      looks like
+#      srun ... bash ... watch.sh
+#
+#      For older version:
+#      --gres=gpu:[NGPU] works for serial or no user srun, but
+#      parallelized user srun may be more complex to port
 # 2. Look for CHANGETHIS comments below to specify actual workload.
 #    DO NOT change part outside these regions unless necessary.
 #    Changes include:
@@ -47,10 +58,6 @@ while [ ! -f "$WAIT_FILENAME" ]; do sleep 1; done
 # feel free to simply invoke script as in `python main.py`. Make sure
 # --exclusive is specified in srun, but note that its meaning is
 # different from that of sbatch or salloc.
-
-# The option value --gres-flags=allow-task-sharing available in
-# SLURM 23-11-4-1 or later may be helpful in making GPUs visible to
-# watcher easily.
 
 srun --exclusive -N $SLURM_NNODES -n $SLURM_NTASKS -c 1 --mpi=pmi2 APPLICATION
 
