@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -u
 getstring() {
   if [[ $# -ne 3 ]]; then
     echo "Usage: getstring <slurm-module-name> <env-var-name> <prefix>"
@@ -35,4 +35,4 @@ Version: ${version}
 EOF
 echo "${name} ${version}"
 echo 'Run the following for pkg-config to locate the packages:'
-echo "export PKG_CONFIG_PATH=${selfpath}:"'$PKG_CONFIG_PATH'
+echo 'export PKG_CONFIG_PATH=$(pwd):$PKG_CONFIG_PATH'

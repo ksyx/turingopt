@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eu
+set -u
 NVML_PKG_NAME=$(pkg-config --list-all | grep NVML | grep -v '^nvml ' | head -n 1 | cut -d\  -f1)
 if [[ -z "$NVML_PKG_NAME" ]]; then
   pkg-config nvml
