@@ -1,5 +1,7 @@
 [Unit]
 Description=timer for scheduled worker of turingwatch HPC watcher
+BindsTo=turingwatch.server.service
+PartOf=turingwatch.server.service
 [Timer]
 OnCalendar=Wed, 13:00:00
 RandomizedDelaySec=30
