@@ -10,7 +10,8 @@ for SLURM and tested using version 21.08. To ease in quick start,
 SLURM batch submission template and systemd service file templates
 are provided for users to start the daemon with job submission script,
 and for administrator to start the dameon in a dedicated node,
-respectively.
+respectively. **Check out [slides](./slides-web.pdf) for an
+introduction of its purpose, functionality and design!**
 
 ### Building
 After cloning the repo, please `cd` into repo directory and do
